@@ -1,6 +1,6 @@
 # MyRay Lite · Windows 双核心代理客户端
 
-使用 **Tauri 2 + React + TypeScript + Vite + Tailwind CSS + Radix UI**；业务逻辑由 Rust 实现。版本 **0.2.1**。
+使用 **Tauri 2 + React + TypeScript + Vite + Tailwind CSS + Radix UI**；业务逻辑由 Rust 实现。开发版本 **0.2.2**。
 
 这是 MyRay Lite 的 Tauri / Rust 重写版本。旧版使用 WPF / C#；新版使用独立数据目录，不读取或导入旧配置、订阅和节点。
 
@@ -48,6 +48,8 @@ npm run tauri build # Windows x64 EXE 安装包和 MSI
 - 日志：来源/级别筛选、滚动、复制、轮转、诊断、脱敏 ZIP 导出。
 - 更新：官方双核心更新和路由数据更新；应用更新源单独配置，仅检查并打开发布页面，不自动安装。
 - Fluent 深浅主题、紧凑布局、减少动态效果、Radix Dialog/Dropdown Menu/Tooltip/Switch。
+- 可持久化的简洁模式：保留节点选择、连接/断开及全部订阅更新，完整界面随时切回。
+- 启动时可依次更新全部订阅；失败时保留旧节点，并在更新结束后执行自动连接。
 
 Xray 已移除 `allowInsecure`：自签名 TLS 节点可在详情填写服务器证书 **SHA-256 指纹**（64 位十六进制，可含冒号）。不会自动把未知证书当作可信证书。
 
@@ -55,8 +57,8 @@ Xray 已移除 `allowInsecure`：自签名 TLS 节点可在详情填写服务器
 
 ## 安装包
 
-- `src-tauri/target/release/bundle/nsis/MyRay Lite_0.2.1_x64-setup.exe`
-- `src-tauri/target/release/bundle/msi/MyRay Lite_0.2.1_x64_zh-CN.msi`
+- `src-tauri/target/release/bundle/nsis/MyRay Lite_0.2.2_x64-setup.exe`
+- `src-tauri/target/release/bundle/msi/MyRay Lite_0.2.2_x64_zh-CN.msi`
 
 EXE 安装器面向当前用户，提供简体中文/英文；MSI 为简体中文。缺少 WebView2 时安装器联网下载。发布包尚未配置代码签名。直接运行 release 应用时需同时保留旁边的 `cores/` 资源目录，不能只复制单个主程序。
 
@@ -82,10 +84,13 @@ docs/            # 迁移、验证、第三方组件说明
 
 Tailwind 4 使用 `@tailwindcss/vite` 和 CSS `@import "tailwindcss"`，无重复 PostCSS/Tailwind 配置。依赖由 npm/Cargo 锁文件固定，核心由独立资源锁文件固定。
 
-
 ## 0.2.1 排版修正与源码包
 
 取消标题负字距并增加左右留白。详见 [0.2.1 发布说明](docs/RELEASE-0.2.1.md)。可通过 `scripts/package-source.ps1` 生成包含双核心资源的源码包。GitHub 自动生成的 Source code 压缩包不包含核心资源，需要运行 `npm run setup:cores`。
+
+## 0.2.2 简洁模式与启动订阅更新
+
+新增可切换的简洁模式、订阅全部更新，以及启动更新后再自动连接。完整说明见 [0.2.2 发布说明](docs/RELEASE-0.2.2.md)。
 
 ## 许可证
 

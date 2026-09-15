@@ -1,21 +1,21 @@
 {
-  "version": "0.2.1",
-  "builtAt": "2026-09-15T03:26:03.780Z",
+  "version": "0.2.2",
+  "builtAt": "2026-09-15T09:35:00Z",
   "artifacts": [
     {
-      "path": "src-tauri/target/release/bundle/nsis/MyRay Lite_0.2.1_x64-setup.exe",
-      "bytes": 39323633,
-      "sha256": "5177ab366d1370891a332ee3c31108f118e5387b091ec206383ff00d3936826f"
+      "path": "src-tauri/target/release/bundle/nsis/MyRay Lite_0.2.2_x64-setup.exe",
+      "bytes": 39338688,
+      "sha256": "6125d024b1c6cdd6484af8366687f7ec4bacf055a8749059bb5024cebb5059c8"
     },
     {
-      "path": "src-tauri/target/release/bundle/msi/MyRay Lite_0.2.1_x64_zh-CN.msi",
-      "bytes": 56643584,
-      "sha256": "b6e4b045ee8f204459568d933700177eebe9da6fd80ef5ca898755d3c084ba05"
+      "path": "src-tauri/target/release/bundle/msi/MyRay Lite_0.2.2_x64_zh-CN.msi",
+      "bytes": 56647680,
+      "sha256": "7c5dc3b0cdead8baca60dd2765c0641079082252faa58c195d114c3dd610773d"
     },
     {
       "path": "src-tauri/target/release/myray-lite-tauri.exe",
-      "bytes": 8157696,
-      "sha256": "a9d41382685d64e881f3695267f3ecc1e83e87f033bb21f267be338442916aa5"
+      "bytes": 8169472,
+      "sha256": "ad147fa093ac46cb636e98bb948a71b483b8cd3e792b8e5bafe893779cdf8b6b"
     }
   ]
 }

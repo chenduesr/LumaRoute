@@ -292,6 +292,9 @@ p {
   display: inline-block;
   flex-shrink: 0;
 }
+.status-dot.offline {
+  background: var(--muted);
+}
 .main-shell {
   flex: 1;
   min-width: 0;
@@ -306,6 +309,12 @@ p {
   justify-content: space-between;
   padding: 0 34px;
   border-bottom: 1px solid var(--line);
+}
+.toolbar-actions,
+.page-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .breadcrumb {
   display: flex;
@@ -1726,6 +1735,195 @@ select:focus-visible {
   font-size: 12px;
   margin-bottom: 14px;
   overflow-wrap: anywhere;
+}
+.simple-shell {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(circle at 50% 28%, #4b91ff10, transparent 38%), var(--bg);
+}
+.simple-toolbar {
+  height: 62px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--line);
+}
+.simple-brand,
+.simple-toolbar-actions,
+.simple-state,
+.simple-meta > span,
+.simple-job {
+  display: flex;
+  align-items: center;
+}
+.simple-brand {
+  gap: 10px;
+}
+.simple-brand img {
+  width: 31px;
+  height: 31px;
+}
+.simple-brand strong,
+.simple-brand span {
+  display: block;
+}
+.simple-brand strong {
+  font-size: 14px;
+}
+.simple-brand span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.simple-toolbar-actions {
+  gap: 8px;
+}
+.simple-main {
+  width: min(560px, calc(100% - 40px));
+  margin: auto;
+  padding: 30px 0;
+  overflow: auto;
+  flex: none;
+}
+.simple-connection {
+  position: relative;
+  padding: 29px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 18px 55px #162b4a12;
+}
+.simple-connection.is-connected {
+  border-color: #54b98b66;
+}
+.simple-state {
+  gap: 16px;
+  padding-right: 82px;
+}
+.simple-state-icon {
+  width: 49px;
+  height: 49px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+.simple-state-icon.on {
+  color: #54b98b;
+  background: #54b98b16;
+  border-color: #54b98b42;
+}
+.simple-state .eyebrow {
+  display: block;
+  margin-bottom: 4px;
+}
+.simple-state h1 {
+  font-size: 25px;
+  line-height: 1.35;
+}
+.simple-state p {
+  margin-top: 3px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.simple-power {
+  position: absolute;
+  right: 29px;
+  top: 30px;
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--blue);
+  background: var(--blue-soft);
+  border: 1px solid #5997ee55;
+}
+.simple-power:hover {
+  transform: translateY(-1px);
+}
+.simple-power.on {
+  color: #fff;
+  background: #30916b;
+  border-color: #72c6a5;
+}
+.simple-node-select {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  align-items: center;
+  gap: 14px;
+  margin-top: 27px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+}
+.simple-node-select select {
+  min-width: 0;
+}
+.simple-node-select .button {
+  justify-self: start;
+}
+.simple-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 20px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.simple-meta > span {
+  gap: 7px;
+}
+.simple-job {
+  gap: 9px;
+  margin-top: 13px;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--blue-soft);
+  color: var(--muted);
+  font-size: 11px;
+}
+.simple-job span {
+  flex: 1;
+}
+.simple-job button {
+  color: var(--blue);
+}
+.simple-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 13px;
+}
+.simple-footer {
+  height: 27px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 9px;
+}
+.spin {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .form-error {
   color: #e87979;

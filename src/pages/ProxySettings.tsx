@@ -145,7 +145,12 @@ export function ProxySettings({
             {toggle(
               "autoConnect",
               "启动后自动连接",
-              "使用当前选中的节点和已保存的代理模式。",
+              "先更新订阅，再使用当前选中的节点和已保存的代理模式。",
+            )}
+            {toggle(
+              "updateSubscriptionsOnLaunch",
+              "启动时更新订阅",
+              "依次更新全部订阅；失败时保留上次成功的节点。每次程序启动只执行一次。",
             )}
             {toggle(
               "minimizeToTray",
@@ -329,6 +334,20 @@ export function ProxySettings({
         {tab === "外观" && (
           <>
             {row(
+              "简洁模式",
+              "只显示节点、连接和订阅更新；完整功能随时可以切回。",
+              <Switch.Root
+                className="switch"
+                aria-label="简洁模式"
+                checked={Boolean(appearance.simpleMode)}
+                onCheckedChange={(value) =>
+                  saveAppearance({ ...appearance, simpleMode: value })
+                }
+              >
+                <Switch.Thumb className="switch-thumb" />
+              </Switch.Root>,
+            )}
+            {row(
               "主题",
               "立即生效",
               <select
@@ -386,7 +405,7 @@ export function ProxySettings({
               </button>
             </div>
             <p className="config-note">
-              MyRay Lite 0.2.1 · Tauri 2 / React / Rust
+              MyRay Lite 0.2.2 · Tauri 2 / React / Rust
               <br />
               旧项目与旧数据保持独立。节点凭据保存在当前用户的应用数据目录，请妥善保管。
             </p>
@@ -396,4 +415,3 @@ export function ProxySettings({
     </>
   );
 }
-

@@ -70,6 +70,23 @@ async fn proxy_action(
                 state.start_job("subscription", 1, move |s| s.update_subscription(&id))?;
                 Ok(Value::Null)
             }
+            "updateAllSubscriptions" => {
+                let ids: Vec<String> = state
+                    .data
+                    .lock()
+                    .unwrap()
+                    .subscriptions
+                    .iter()
+                    .map(|subscription| subscription.id.clone())
+                    .collect();
+                if ids.is_empty() {
+                    return Err("还没有可更新的订阅".into());
+                }
+                state.start_job("subscription", ids.len(), move |s| {
+                    s.update_subscriptions(ids)
+                })?;
+                Ok(Value::Null)
+            }
             "connect" => {
                 let id = args["id"].as_str().map(str::to_string);
                 state.start_job("connect", 1, move |s| s.connect(id))?;
@@ -228,12 +245,38 @@ pub fn run() {
             state.background();
             app.manage(state.clone());
             if !isolated {
-                if settings.auto_connect
+                let startup_subscription_ids: Vec<String> = state
+                    .data
+                    .lock()
+                    .unwrap()
+                    .subscriptions
+                    .iter()
+                    .map(|subscription| subscription.id.clone())
+                    .collect();
+                if (settings.update_subscriptions_on_launch && !startup_subscription_ids.is_empty())
+                    || settings.auto_connect
                     || (settings.auto_check_updates && !settings.update_repo.is_empty())
                 {
-                    let _ = state.start_job("startup", 1, move |s| {
+                    let startup_total = startup_subscription_ids.len()
+                        + usize::from(settings.auto_connect)
+                        + usize::from(
+                            settings.auto_check_updates && !settings.update_repo.is_empty(),
+                        );
+                    let _ = state.start_job("startup", startup_total, move |s| {
                         let mut messages = Vec::new();
+                        if settings.update_subscriptions_on_launch
+                            && !startup_subscription_ids.is_empty()
+                        {
+                            match s.update_subscriptions(startup_subscription_ids) {
+                                Ok(message) => messages.push(message),
+                                Err(error) => {
+                                    s.log("ERROR", "startup", &error);
+                                    messages.push(error);
+                                }
+                            }
+                        }
                         if settings.auto_connect {
+                            s.cancelled()?;
                             match s.connect(None) {
                                 Ok(m) => messages.push(m),
                                 Err(e) => {

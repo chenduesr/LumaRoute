@@ -11,6 +11,7 @@ pub struct Settings {
     pub bypass_mainland: bool,
     pub start_on_boot: bool,
     pub auto_connect: bool,
+    pub update_subscriptions_on_launch: bool,
     pub minimize_to_tray: bool,
     pub direct_domains: String,
     pub direct_ips: String,
@@ -44,6 +45,7 @@ impl Default for Settings {
             bypass_mainland: true,
             start_on_boot: false,
             auto_connect: false,
+            update_subscriptions_on_launch: true,
             minimize_to_tray: true,
             direct_domains: String::new(),
             direct_ips: String::new(),
@@ -63,7 +65,7 @@ impl Default for Settings {
             test_concurrency: 8,
             test_retries: 1,
             download_bytes: 1048576,
-            update_repo: String::new(),
+            update_repo: "chenduesr/MyRay-Lite-Tauri".into(),
             auto_check_updates: false,
         }
     }

@@ -20,10 +20,22 @@ export function Subscriptions({
           <h1>订阅</h1>
           <p>节点集中管理，更新失败时保留上次成功的数据。</p>
         </div>
-        <button className="button primary" onClick={() => onEdit()}>
-          <Plus size={16} />
-          添加订阅
-        </button>
+        <div className="page-heading-actions">
+          <button
+            className="button secondary"
+            disabled={
+              snapshot.job.running || !snapshot.data.subscriptions.length
+            }
+            onClick={() => void run("updateAllSubscriptions")}
+          >
+            <RefreshCw size={15} />
+            全部更新
+          </button>
+          <button className="button primary" onClick={() => onEdit()}>
+            <Plus size={16} />
+            添加订阅
+          </button>
+        </div>
       </div>
       {snapshot.data.subscriptions.length ? (
         <div className="subscription-list">

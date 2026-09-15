@@ -446,6 +446,12 @@ impl Service {
             self.cancelled()?;
             let count = nodes.len();
             self.change(|d| {
+                let active_was_from_subscription = d
+                    .active_node_id
+                    .as_ref()
+                    .and_then(|active_id| d.nodes.iter().find(|node| &node.id == active_id))
+                    .map(|node| node.subscription_id.as_deref() == Some(id))
+                    .unwrap_or(false);
                 let old: Vec<_> = d
                     .nodes
                     .iter()
@@ -474,7 +480,14 @@ impl Service {
                     .iter()
                     .any(|n| Some(&n.id) == d.active_node_id.as_ref())
                 {
-                    d.active_node_id = None;
+                    d.active_node_id = if active_was_from_subscription {
+                        d.nodes
+                            .iter()
+                            .find(|node| node.subscription_id.as_deref() == Some(id))
+                            .map(|node| node.id.clone())
+                    } else {
+                        None
+                    };
                 }
                 if let Some(s) = d.subscriptions.iter_mut().find(|s| s.id == id) {
                     s.last_updated = Some(now());
@@ -493,6 +506,43 @@ impl Service {
             });
         }
         result
+    }
+    pub fn update_subscriptions(&self, ids: Vec<String>) -> Result<String, String> {
+        if ids.is_empty() {
+            return Ok("没有可更新的订阅".into());
+        }
+        {
+            let mut job = self.job.lock().unwrap();
+            job.total = ids.len();
+            job.completed = 0;
+            job.message = format!("正在更新订阅 0 / {}", ids.len());
+        }
+        let mut succeeded = 0usize;
+        let mut failed = 0usize;
+        let mut first_error = None;
+        for (index, id) in ids.iter().enumerate() {
+            self.cancelled()?;
+            match self.update_subscription(id) {
+                Ok(_) => succeeded += 1,
+                Err(error) => {
+                    failed += 1;
+                    if first_error.is_none() {
+                        first_error = Some(error.clone());
+                    }
+                    self.log("ERROR", "subscription", &error);
+                }
+            }
+            let mut job = self.job.lock().unwrap();
+            job.completed = index + 1;
+            job.message = format!("正在更新订阅 {} / {}", job.completed, job.total);
+        }
+        if succeeded == 0 && failed > 0 {
+            return Err(format!(
+                "全部 {failed} 个订阅更新失败：{}",
+                first_error.unwrap_or_else(|| "未知错误".into())
+            ));
+        }
+        Ok(format!("订阅更新完成：{succeeded} 个成功，{failed} 个失败"))
     }
     pub fn connect(self: &Arc<Self>, id: Option<String>) -> Result<String, String> {
         let _op = self.operation.lock().unwrap();
@@ -707,7 +757,12 @@ impl Service {
             .send()
             .map_err(|_| "HTTP 请求失败或超时")?
             .error_for_status()
-            .map_err(|e| format!("测速地址返回非成功状态：{}", e.status().map(|s| s.as_u16()).unwrap_or(0)))?;
+            .map_err(|e| {
+                format!(
+                    "测速地址返回非成功状态：{}",
+                    e.status().map(|s| s.as_u16()).unwrap_or(0)
+                )
+            })?;
         let latency = start.elapsed().as_millis() as u64;
         if mode == "http" {
             return Ok((latency, None));
@@ -1133,4 +1188,3 @@ mod tests {
 #[cfg(test)]
 #[path = "service_integration.rs"]
 mod integration;
-

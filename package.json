@@ -1,7 +1,7 @@
 {
   "name": "myray-lite-tauri",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,7 @@
     "tauri": "node scripts/tauri.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit --project tsconfig.node.json",
     "test:e2e": "node scripts/test-native.mjs",
+    "test:ui": "node scripts/test-simple-ui.mjs",
     "format": "prettier --write src scripts tests *.ts *.json *.md docs",
     "setup:cores": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-cores.ps1"
   },
@@ -37,4 +38,3 @@
     "vite": "^8.0.16"
   }
 }
-

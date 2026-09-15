@@ -8,6 +8,7 @@ export interface ProxySettings {
   bypassMainland: boolean;
   startOnBoot: boolean;
   autoConnect: boolean;
+  updateSubscriptionsOnLaunch: boolean;
   minimizeToTray: boolean;
   directDomains: string;
   directIps: string;

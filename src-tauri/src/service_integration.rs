@@ -195,7 +195,7 @@ fn real_cores_isolated_protocols_connections_subscriptions_and_cleanup() {
             &root,
             "singbox",
             &server_config,
-            ready_port,
+            any_port,
             &service.child_job,
             |l| eprintln!("server: {l}"),
         )
@@ -319,6 +319,16 @@ fn real_cores_isolated_protocols_connections_subscriptions_and_cleanup() {
         .unwrap();
     service.update_subscription("fixture-sub").unwrap();
     let nodes_before = service.snapshot().data.nodes.len();
+    let original_subscription_node = service
+        .snapshot()
+        .data
+        .nodes
+        .iter()
+        .find(|node| node.subscription_id.as_deref() == Some("fixture-sub"))
+        .unwrap()
+        .id
+        .clone();
+    service.select(&original_subscription_node).unwrap();
     *sub_http.response.lock().unwrap() = (500, "failure".into());
     assert!(service.update_subscription("fixture-sub").is_err());
     assert_eq!(service.snapshot().data.nodes.len(), nodes_before);
@@ -326,6 +336,49 @@ fn real_cores_isolated_protocols_connections_subscriptions_and_cleanup() {
     assert!(service.update_subscription("fixture-sub").is_err());
     assert_eq!(service.snapshot().data.nodes.len(), nodes_before);
     service.cancel.store(false, Ordering::SeqCst);
+    *sub_http.response.lock().unwrap() = (200, links[1].clone());
+    service.update_subscription("fixture-sub").unwrap();
+    let replaced = service.snapshot();
+    let replacement_id = replaced.data.active_node_id.as_deref().unwrap();
+    assert_ne!(replacement_id, original_subscription_node);
+    assert_eq!(
+        replaced
+            .data
+            .nodes
+            .iter()
+            .find(|node| node.id == replacement_id)
+            .unwrap()
+            .subscription_id
+            .as_deref(),
+        Some("fixture-sub")
+    );
+    *sub_http.response.lock().unwrap() = (500, "failure".into());
+    let working_sub_http = HttpFixture::new();
+    *working_sub_http.response.lock().unwrap() = (200, links[0].clone());
+    service
+        .save_subscription(Subscription {
+            id: "working-sub".into(),
+            name: "Working fixture".into(),
+            url: working_sub_http.url(),
+            ..Subscription::default()
+        })
+        .unwrap();
+    service.update_subscription("working-sub").unwrap();
+    let summary = service
+        .update_subscriptions(vec!["fixture-sub".into(), "working-sub".into()])
+        .unwrap();
+    assert!(summary.contains("1 个成功，1 个失败"));
+    let snapshot = service.snapshot();
+    assert!(snapshot
+        .data
+        .nodes
+        .iter()
+        .any(|node| node.subscription_id.as_deref() == Some("working-sub")));
+    assert!(snapshot
+        .data
+        .nodes
+        .iter()
+        .any(|node| node.subscription_id.as_deref() == Some("fixture-sub")));
     let export = service.export_diagnostics().unwrap();
     let mut zip = zip::ZipArchive::new(fs::File::open(export).unwrap()).unwrap();
     for i in 0..zip.len() {
@@ -337,4 +390,3 @@ fn real_cores_isolated_protocols_connections_subscriptions_and_cleanup() {
     service.shutdown();
     assert!(storage::load(&root).is_ok());
 }
-

@@ -3,4 +3,5 @@ export interface Settings {
   theme: Theme;
   compact: boolean;
   reducedMotion: boolean;
+  simpleMode: boolean;
 }
