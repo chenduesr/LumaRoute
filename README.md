@@ -1,6 +1,6 @@
 # LumaRoute · Windows 双核心代理客户端
 
-使用 **Tauri 2 + React + TypeScript + Vite + Tailwind CSS + Radix UI**；业务逻辑由 Rust 实现。开发版本 **0.3.0**。
+使用 **Tauri 2 + React + TypeScript + Vite + Tailwind CSS + Radix UI**；业务逻辑由 Rust 实现。当前版本 **0.3.0**。
 
 LumaRoute 使用独立应用标识和数据目录，配置、订阅与节点均从空白状态开始。
 
@@ -8,7 +8,7 @@ LumaRoute 使用独立应用标识和数据目录，配置、订阅与节点均�
 
 ## 下载与版本关系
 
-- LumaRoute 0.3.0 正在开发，完成验证后提供 EXE、MSI 与源码包。
+- [下载 LumaRoute 0.3.0](https://github.com/chenduesr/LumaRoute/releases/tag/v0.3.0)：提供 EXE、MSI、源码包与 SHA-256 校验文件。
 - 应用更新源填写 `chenduesr/LumaRoute`。检查功能查询正式 Release；预发布版本通过发布页面手动下载。
 
 发布包尚未配置代码签名。完整功能和验证边界见下文及 [迁移说明](docs/MIGRATION.md)。
@@ -107,7 +107,7 @@ Tailwind 4 使用 `@tailwindcss/vite` 和 CSS `@import "tailwindcss"`，无重�
 
 ## 0.3.0 LumaRoute 品牌更新
 
-应用更名为 LumaRoute，采用“光线沿路径抵达”的 L 形路线标志；新安装及品牌升级后首次启动默认进入简洁模式。完整说明见 [0.3.0 发布说明](docs/RELEASE-0.3.0.md)。
+LumaRoute 采用“光线沿路径抵达”的 L 形路线标志；首次启动默认进入简洁模式。完整说明见 [0.3.0 发布说明](docs/RELEASE-0.3.0.md)。
 
 ## 许可证
 
