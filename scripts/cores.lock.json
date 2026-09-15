@@ -1,0 +1,23 @@
+{
+  "xray": {
+    "version": "v26.3.27",
+    "url": "https://github.com/XTLS/Xray-core/releases/download/v26.3.27/Xray-windows-64.zip",
+    "sha256": "d004c39288ce9ada487c6f398c7c545f7d749e44bdfdd59dbc9f865afba4e1ad",
+    "files": {
+      "geoip.dat": "744c97b74c52bae2ac8664fef6ac481d7765cb8432a0df54f0368a88b9b4a354",
+      "geosite.dat": "adf92de0cfc70e458b399f04c5f912bf42d115ed7e37281b30e2f1c68605e4e9",
+      "LICENSE": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
+      "xray.exe": "15c2d007954ac53ba69b80ec91242786b3c0b71d52649165b4ca1d5cc96ef8f1"
+    }
+  },
+  "singbox": {
+    "version": "v1.14.1",
+    "url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.1/sing-box-1.14.1-windows-amd64.zip",
+    "sha256": "5197f16d492d93202dc623622149a6ed040f8eca263128f91d603f2b901baa89",
+    "files": {
+      "libcronet.dll": "3217c6260fbca5f16072e0b79735742f40109a63bb0ff88fd6b96dd6b54a2928",
+      "LICENSE": "bb3805862b583aee73ad6f7805ec634747a37257a637a3069857843f05ea589c",
+      "sing-box.exe": "b838de45bd0b2e6ddbed1977e4745622f7dffab3b293807ff4c6b1b640fed909"
+    }
+  }
+}

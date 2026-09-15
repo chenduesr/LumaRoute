@@ -1,0 +1,18 @@
+{
+  "started": "2026-09-15T03:09:45.303Z",
+  "checks": [
+    "Native Tauri IPC and bundled Xray/sing-box resources",
+    "Settings validation and persistence through Rust",
+    "Light/dark theme and reload persistence",
+    "Import, select, rename, Radix Dialog/Dropdown/Tooltip and real HTTP test",
+    "Native UI connect/disconnect without system proxy",
+    "Subscription fetch and failed-update data protection",
+    "Diagnostics export and separate app-update source guard",
+    "Official core and geo updates with SHA-256 verification in isolated storage",
+    "820 x 620 layout without horizontal overflow",
+    "No JavaScript runtime errors"
+  ],
+  "errors": [],
+  "finished": "2026-09-15T03:10:37.334Z",
+  "passed": true
+}

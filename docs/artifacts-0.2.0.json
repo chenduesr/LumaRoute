@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "builtAt": "2026-09-15T03:10:00.320Z",
+  "artifacts": [
+    {
+      "path": "src-tauri/target/release/bundle/nsis/MyRay Lite_0.2.0_x64-setup.exe",
+      "bytes": 39335897,
+      "sha256": "693a167e8bcdeae58f156ee695bc416395be22f763f976fa6bba1f43e7b9045a"
+    },
+    {
+      "path": "src-tauri/target/release/bundle/msi/MyRay Lite_0.2.0_x64_zh-CN.msi",
+      "bytes": 56647680,
+      "sha256": "68d40a06b73bdc4bdb81daa0d76bf43fc0ad072d0199364ae1bd4ecce976ded5"
+    },
+    {
+      "path": "src-tauri/target/release/myray-lite-tauri.exe",
+      "bytes": 8157696,
+      "sha256": "eca0f39132fc612b711f6b3e4ad203bb3d62fb5dbb28381f7090c68f851bfe82"
+    }
+  ]
+}
