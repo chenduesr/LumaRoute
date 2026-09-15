@@ -8,7 +8,7 @@
 
 ## 下载与版本关系
 
-- [新版安装包与源码包](https://github.com/chenduesr/MyRay-Lite-Tauri/releases/tag/v0.2.3)：当前正式发布为 0.2.3，EXE 与 MSI 选择一种安装即可。
+- [新版安装包与源码包](https://github.com/chenduesr/MyRay-Lite-Tauri/releases/tag/v0.2.5)：当前正式发布为 0.2.5，EXE 与 MSI 选择一种安装即可。
 - [旧 WPF 仓库](https://github.com/chenduesr/MyRay-Lite)：保留旧版本源码和发布记录；两个项目的版本号独立。
 - 新版应用更新源填写 `chenduesr/MyRay-Lite-Tauri`，不能填写旧 WPF 仓库。当前检查功能查询正式 Release；预发布版本请通过上面的发布页面手动下载。
 
