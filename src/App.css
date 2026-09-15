@@ -1051,6 +1051,16 @@ main {
   font-size: 12px;
   margin-top: 10px;
 }
+.subscription-preview,
+.form-hint {
+  margin-top: 8px;
+  font-size: 11px;
+}
+.quick-subscription-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
 .dropdown {
   min-width: 167px;
   padding: 5px;

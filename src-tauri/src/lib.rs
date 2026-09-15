@@ -11,7 +11,7 @@ use std::sync::{atomic::Ordering, Arc};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Emitter, Manager,
 };
 
 #[tauri::command]
@@ -174,7 +174,7 @@ async fn proxy_action(
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default();
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_clipboard_manager::init());
     if std::env::var_os("MYRAY_TEST_ROOT").is_none() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(w) = app.get_webview_window("main") {
@@ -197,9 +197,31 @@ pub fn run() {
             };
             let state = Service::new(root, resources, isolated).map_err(std::io::Error::other)?;
             let show = MenuItem::with_id(app, "show", "打开 MyRay Lite", true, None::<&str>)?;
-            let disconnect = MenuItem::with_id(app, "disconnect", "断开连接", true, None::<&str>)?;
+            let status = MenuItem::with_id(app, "status", "↑ 0 B/s  ↓ 0 B/s", false, None::<&str>)?;
+            let current =
+                MenuItem::with_id(app, "current", "当前节点：未选择", false, None::<&str>)?;
+            let connect = MenuItem::with_id(app, "connect-toggle", "连接", true, None::<&str>)?;
+            let recent0 = MenuItem::with_id(app, "recent-0", "最近节点 1", false, None::<&str>)?;
+            let recent1 = MenuItem::with_id(app, "recent-1", "最近节点 2", false, None::<&str>)?;
+            let recent2 = MenuItem::with_id(app, "recent-2", "最近节点 3", false, None::<&str>)?;
+            let update = MenuItem::with_id(
+                app,
+                "update-subscriptions",
+                "更新全部订阅",
+                true,
+                None::<&str>,
+            )?;
+            let test = MenuItem::with_id(app, "test-current", "测试当前节点", true, None::<&str>)?;
+            let simple =
+                MenuItem::with_id(app, "toggle-simple", "切换简洁模式", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &disconnect, &quit])?;
+            let menu = Menu::with_items(
+                app,
+                &[
+                    &show, &status, &current, &connect, &recent0, &recent1, &recent2, &update,
+                    &test, &simple, &quit,
+                ],
+            )?;
             TrayIconBuilder::with_id("main-tray")
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("MyRay Lite · 双核心代理客户端")
@@ -213,13 +235,55 @@ pub fn run() {
                             let _ = w.set_focus();
                         }
                     }
-                    "disconnect" => {
+                    "connect-toggle" => {
                         let s = app.state::<Arc<Service>>().inner().clone();
                         std::thread::spawn(move || {
-                            if let Err(e) = s.disconnect() {
+                            let result = if s.snapshot().connection.status == "connected" {
+                                s.disconnect()
+                            } else {
+                                s.start_job("connect", 1, |service| service.connect(None))
+                            };
+                            if let Err(e) = result {
                                 s.log("ERROR", "connection", &e);
                             }
                         });
+                    }
+                    "update-subscriptions" => {
+                        let s = app.state::<Arc<Service>>().inner().clone();
+                        let ids = s
+                            .data
+                            .lock()
+                            .unwrap()
+                            .subscriptions
+                            .iter()
+                            .map(|item| item.id.clone())
+                            .collect::<Vec<_>>();
+                        let _ = s.start_job("subscription", ids.len(), move |service| {
+                            service.update_subscriptions(ids)
+                        });
+                    }
+                    "test-current" => {
+                        let s = app.state::<Arc<Service>>().inner().clone();
+                        let selected = s.data.lock().unwrap().active_node_id.clone();
+                        if let Some(id) = selected {
+                            let _ = s.start_job("test", 1, move |service| {
+                                service.test_nodes(vec![id], "http".into())
+                            });
+                        }
+                    }
+                    "toggle-simple" => {
+                        let _ = app.emit("toggle-simple-mode", ());
+                    }
+                    id if id.starts_with("recent-") => {
+                        let index = id
+                            .trim_start_matches("recent-")
+                            .parse::<usize>()
+                            .unwrap_or(99);
+                        let s = app.state::<Arc<Service>>().inner().clone();
+                        let selected = s.data.lock().unwrap().recent_node_ids.get(index).cloned();
+                        if let Some(id) = selected {
+                            let _ = s.select(&id);
+                        }
                     }
                     "quit" => {
                         app.exit(0);
@@ -243,6 +307,56 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+            let tray_state = state.clone();
+            std::thread::spawn(move || {
+                let recent_items = [recent0, recent1, recent2];
+                while !tray_state.exit.load(Ordering::SeqCst) {
+                    let snapshot = tray_state.snapshot();
+                    let speed = |bytes: u64| {
+                        if bytes >= 1_048_576 {
+                            format!("{:.1} MiB/s", bytes as f64 / 1_048_576.0)
+                        } else {
+                            format!("{:.0} KiB/s", bytes as f64 / 1024.0)
+                        }
+                    };
+                    let _ = status.set_text(format!(
+                        "↑ {}  ↓ {}",
+                        speed(snapshot.traffic.upload_speed),
+                        speed(snapshot.traffic.download_speed)
+                    ));
+                    let active = snapshot
+                        .data
+                        .active_node_id
+                        .as_ref()
+                        .and_then(|id| snapshot.data.nodes.iter().find(|node| &node.id == id));
+                    let _ = current.set_text(format!(
+                        "当前节点：{}",
+                        active.map(|node| node.name.as_str()).unwrap_or("未选择")
+                    ));
+                    let connected = snapshot.connection.status == "connected";
+                    let _ = connect.set_text(if connected { "断开连接" } else { "连接" });
+                    let _ = connect.set_enabled(
+                        active.is_some() || snapshot.data.settings.proxy_mode == "direct",
+                    );
+                    let _ = update.set_enabled(
+                        !snapshot.data.subscriptions.is_empty() && !snapshot.job.running,
+                    );
+                    let _ = test.set_enabled(active.is_some() && !snapshot.job.running);
+                    for (index, item) in recent_items.iter().enumerate() {
+                        let node =
+                            snapshot.data.recent_node_ids.get(index).and_then(|id| {
+                                snapshot.data.nodes.iter().find(|node| &node.id == id)
+                            });
+                        let _ = item.set_text(format!(
+                            "最近：{}",
+                            node.map(|node| node.name.as_str()).unwrap_or("—")
+                        ));
+                        let _ =
+                            item.set_enabled(node.is_some() && !connected && !snapshot.job.running);
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                }
+            });
             let settings = state.data.lock().unwrap().settings.clone();
             state.background();
             app.manage(state.clone());

@@ -335,6 +335,14 @@ fn real_cores_isolated_protocols_connections_subscriptions_and_cleanup() {
         })
         .unwrap();
     assert_eq!(saved_subscription_id, "fixture-sub");
+    assert!(service
+        .save_subscription(Subscription {
+            name: "Duplicate".into(),
+            url: sub_http.url(),
+            ..Subscription::default()
+        })
+        .unwrap_err()
+        .contains("已经存在"));
     service
         .change(|data| {
             data.active_node_id = None;
@@ -354,6 +362,10 @@ fn real_cores_isolated_protocols_connections_subscriptions_and_cleanup() {
         .id
         .clone();
     service.select(&original_subscription_node).unwrap();
+    assert_eq!(
+        service.snapshot().data.recent_node_ids.first(),
+        Some(&original_subscription_node)
+    );
     *sub_http.response.lock().unwrap() = (500, "failure".into());
     assert!(service.update_subscription("fixture-sub").is_err());
     assert_eq!(service.snapshot().data.nodes.len(), nodes_before);
@@ -364,6 +376,10 @@ fn real_cores_isolated_protocols_connections_subscriptions_and_cleanup() {
     *sub_http.response.lock().unwrap() = (200, links[1].clone());
     service.update_subscription("fixture-sub").unwrap();
     let replaced = service.snapshot();
+    assert!(!replaced
+        .data
+        .recent_node_ids
+        .contains(&original_subscription_node));
     let replacement_id = replaced.data.active_node_id.as_deref().unwrap();
     assert_ne!(replacement_id, original_subscription_node);
     assert_eq!(

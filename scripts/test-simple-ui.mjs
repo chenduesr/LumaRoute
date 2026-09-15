@@ -4,9 +4,15 @@ import { createServer } from "node:net";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import QRCode from "qrcode";
 
 const artifactRoot = resolve("test-artifacts");
 await mkdir(artifactRoot, { recursive: true });
+const qrFixture = resolve(artifactRoot, "subscription-qr.png");
+await QRCode.toFile(qrFixture, "https://qr.example/sub", {
+  width: 320,
+  margin: 2,
+});
 const socket = createServer();
 await new Promise((done) => socket.listen(0, "127.0.0.1", done));
 const port = socket.address().port;
@@ -154,8 +160,23 @@ try {
   });
   await context.addInitScript((initialSnapshot) => {
     globalThis.isTauri = true;
+    Object.defineProperty(navigator, "clipboard", {
+      value: { readText: async () => "https://clipboard.example/sub" },
+      configurable: true,
+    });
     window.__MYRAY_TEST_ACTIONS__ = [];
+    window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+      unregisterListener: () => {},
+    };
+    const callbacks = new Map();
+    let callbackId = 0;
     window.__TAURI_INTERNALS__ = {
+      metadata: { currentWindow: { label: "main" } },
+      transformCallback: (callback) => {
+        const id = ++callbackId;
+        callbacks.set(id, callback);
+        return id;
+      },
       invoke: async (command, payload) => {
         if (command === "proxy_snapshot") return initialSnapshot;
         if (command === "proxy_action") {
@@ -167,6 +188,15 @@ try {
             ? "fixture-new-sub"
             : null;
         }
+        if (command === "plugin:clipboard-manager|read_text")
+          return "https://clipboard.example/sub";
+        if (command === "plugin:event|listen") return callbackId;
+        if (command === "plugin:event|unlisten") return null;
+        if (command === "plugin:window|scale_factor") return 1;
+        if (command === "plugin:window|inner_size")
+          return { width: innerWidth, height: innerHeight };
+        if (command === "plugin:window|outer_position") return { x: 40, y: 40 };
+        if (command === "plugin:window|is_maximized") return false;
         return null;
       },
     };
@@ -175,6 +205,12 @@ try {
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto(`http://127.0.0.1:${port}`);
+  await delay(300);
+  if (!(await page.getByRole("heading", { name: "连接，从容一点。" }).count())) {
+    throw new Error(
+      `Application did not render. Errors: ${pageErrors.join(" | ")} Body: ${await page.locator("body").innerText()}`,
+    );
+  }
   await expect(
     page.getByRole("heading", { name: "连接，从容一点。" }),
   ).toBeVisible();
@@ -199,10 +235,20 @@ try {
     path: resolve(artifactRoot, "simple-mode-1280x860.png"),
   });
   await page.getByRole("button", { name: "添加订阅" }).click();
-  await page.getByLabel("订阅名称").fill("新增订阅");
-  await page.getByLabel("订阅 URL").fill("https://example.test/new-sub");
-  await page.getByRole("button", { name: "保存订阅" }).click();
+  await expect(page.getByLabel("订阅名称")).toHaveValue("clipboard.example");
+  await expect(page.getByText("域名预览：clipboard.example")).toBeVisible();
+  await page.getByRole("button", { name: "保存并更新" }).click();
   await expect(page.getByRole("dialog")).toBeHidden();
+  await page.getByRole("button", { name: "添加订阅" }).click();
+  await page
+    .locator('input[type="file"][accept*="image/png"]')
+    .setInputFiles(qrFixture);
+  await expect(page.getByLabel("订阅名称")).toHaveValue("qr.example");
+  await expect(page.getByLabel("订阅 URL")).toHaveValue(
+    "https://qr.example/sub",
+  );
+  await expect(page.getByText("域名预览：qr.example")).toBeVisible();
+  await page.getByRole("button", { name: "保存并更新" }).click();
   await page.getByRole("button", { name: "测试当前节点，HTTP 延迟" }).click();
   await page.getByRole("button", { name: "选择测速范围和方式" }).click();
   await page.getByRole("menuitem", { name: "全部节点 · TCP 延迟" }).click();

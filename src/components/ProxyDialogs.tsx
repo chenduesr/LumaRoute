@@ -1,12 +1,14 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import {
+  useEffect,
   useRef,
   useState,
   useContext,
   createContext,
   type ReactNode,
 } from "react";
-import { FileUp, X } from "lucide-react";
+import { ClipboardPaste, FileUp, QrCode, X } from "lucide-react";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import type { ProxyNode, Subscription } from "../lib/proxy";
 import { coreName } from "../lib/proxy";
 export const ProxyErrorContext = createContext("");
@@ -152,11 +154,13 @@ export function SubscriptionDialog({
   run,
   onClose,
   updateAfterSave = false,
+  quickImport = false,
 }: {
   editing?: Subscription;
   run: Run;
   onClose: () => void;
   updateAfterSave?: boolean;
+  quickImport?: boolean;
 }) {
   const [sub, setSub] = useState<Subscription>(
     editing ?? {
@@ -170,10 +174,48 @@ export function SubscriptionDialog({
     },
   );
   const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const qrFile = useRef<HTMLInputElement>(null);
+  const generatedName = useRef("");
+  const applyUrl = (value: string) => {
+    const match = value.match(/https?:\/\/[^\s<>"']+/i);
+    if (!match) return setMessage("没有找到 HTTP/HTTPS 订阅链接");
+    try {
+      const parsed = new URL(match[0]);
+      const suggestedName = parsed.hostname.replace(/^www\./, "");
+      const previousGeneratedName = generatedName.current;
+      setSub((current) => ({
+        ...current,
+        url: parsed.href,
+        name:
+          !current.name || current.name === previousGeneratedName
+            ? suggestedName
+            : current.name,
+      }));
+      generatedName.current = suggestedName;
+      setMessage(`已识别：${parsed.hostname}`);
+    } catch {
+      setMessage("订阅链接格式无效");
+    }
+  };
+  const readClipboard = async () => {
+    try {
+      applyUrl(await readText());
+    } catch {
+      setMessage("无法读取剪贴板，请检查权限或手动粘贴");
+    }
+  };
+  useEffect(() => {
+    if (quickImport) void readClipboard();
+  }, []);
   return (
     <Modal
       title={editing ? "编辑订阅" : "添加订阅"}
-      description="保存订阅地址后，点击更新获取节点。失败时保留上次成功的节点。"
+      description={
+        quickImport
+          ? "识别剪贴板或二维码，保存后立即获取节点。"
+          : "保存订阅地址后，点击更新获取节点。失败时保留上次成功的节点。"
+      }
       onClose={onClose}
     >
       <form
@@ -217,6 +259,76 @@ export function SubscriptionDialog({
           autoComplete="off"
           onChange={(e) => setSub({ ...sub, url: e.target.value })}
         />
+        {sub.url && (
+          <p className="subscription-preview">
+            域名预览：
+            {(() => {
+              try {
+                return new URL(sub.url).hostname;
+              } catch {
+                return "地址无效";
+              }
+            })()}
+          </p>
+        )}
+        {quickImport && (
+          <>
+            <input
+              ref={qrFile}
+              hidden
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/bmp"
+              onChange={async (event) => {
+                const selected = event.target.files?.[0];
+                if (!selected) return;
+                try {
+                  const bitmap = await createImageBitmap(selected);
+                  const canvas = document.createElement("canvas");
+                  canvas.width = bitmap.width;
+                  canvas.height = bitmap.height;
+                  const context = canvas.getContext("2d", {
+                    willReadFrequently: true,
+                  });
+                  if (!context) throw new Error("canvas");
+                  context.drawImage(bitmap, 0, 0);
+                  const pixels = context.getImageData(
+                    0,
+                    0,
+                    bitmap.width,
+                    bitmap.height,
+                  );
+                  const jsQR = (await import("jsqr")).default;
+                  const result = jsQR(pixels.data, bitmap.width, bitmap.height);
+                  if (!result) throw new Error("qr");
+                  applyUrl(result.data);
+                } catch {
+                  setMessage("没有从图片中识别到订阅二维码");
+                } finally {
+                  event.target.value = "";
+                }
+              }}
+            />
+            <div className="quick-subscription-actions">
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => void readClipboard()}
+              >
+                <ClipboardPaste size={15} />
+                读取剪贴板
+              </button>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => qrFile.current?.click()}
+              >
+                <QrCode size={15} />
+                扫描二维码图片
+              </button>
+            </div>
+          </>
+        )}
+        {message && <p className="form-hint">{message}</p>}
         <label className="field-label" htmlFor="sub-interval">
           自动更新
         </label>
@@ -235,7 +347,7 @@ export function SubscriptionDialog({
         </select>
         <div className="dialog-actions">
           <button className="button primary" disabled={busy}>
-            保存订阅
+            {quickImport ? "保存并更新" : "保存订阅"}
           </button>
         </div>
       </form>

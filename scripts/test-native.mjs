@@ -6,6 +6,7 @@ import { createSocket } from "node:dgram";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import QRCode from "qrcode";
 
 const artifactRoot = resolve("test-artifacts");
 await mkdir(artifactRoot, { recursive: true });
@@ -58,6 +59,11 @@ const server = createServer((req, res) => {
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const fixturePort = server.address().port;
+const qrFixture = resolve(artifactRoot, "native-subscription-qr.png");
+await QRCode.toFile(qrFixture, `http://127.0.0.1:${fixturePort}/subscription`, {
+  width: 320,
+  margin: 2,
+});
 server.on("connect", (req, socket, head) => {
   if (req.url !== `127.0.0.1:${fixturePort}`) {
     socket.end("HTTP/1.1 403 Forbidden\r\n\r\n");
@@ -160,6 +166,51 @@ try {
       initial.core.geoReady,
   ).toBe(true);
   check("Native Tauri IPC and bundled Xray/sing-box resources");
+  const windowInvoke = (command, payload = {}) =>
+    page.evaluate(
+      ({ command, payload }) =>
+        window.__TAURI_INTERNALS__.invoke(`plugin:window|${command}`, {
+          label: "main",
+          ...payload,
+        }),
+      { command, payload },
+    );
+  await page.locator(".drag-region").dispatchEvent("dblclick");
+  await expect.poll(() => windowInvoke("is_maximized")).toBe(true);
+  await page.locator(".drag-region").dispatchEvent("dblclick");
+  await expect.poll(() => windowInvoke("is_maximized")).toBe(false);
+  await windowInvoke("set_size", {
+    value: { Logical: { width: 1160, height: 780 } },
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        JSON.parse(localStorage.getItem("myray.window.full.v1") || "null"),
+      ),
+    )
+    .not.toBeNull();
+  await page.getByRole("button", { name: "切换到简洁模式" }).click();
+  await windowInvoke("set_size", {
+    value: { Logical: { width: 980, height: 700 } },
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        JSON.parse(localStorage.getItem("myray.window.simple.v1") || "null"),
+      ),
+    )
+    .not.toBeNull();
+  await page.getByRole("button", { name: "完整模式" }).click();
+  await expect
+    .poll(async () => {
+      const size = await windowInvoke("inner_size");
+      const scale = await windowInvoke("scale_factor");
+      return Math.round(size.width / scale);
+    })
+    .toBe(1160);
+  check(
+    "Window position/size memory per mode, DPI conversion and titlebar double-click maximize",
+  );
   const nav = (name) =>
     page
       .getByRole("navigation", { name: "主导航" })
@@ -249,11 +300,16 @@ try {
   subscriptionBody = `socks://127.0.0.1:${fixturePort}#Subscription-Fixture`;
   await page.getByRole("button", { name: "切换到简洁模式" }).click();
   await page.getByRole("button", { name: "添加订阅", exact: true }).click();
-  await dialog.getByLabel("订阅名称").fill("本地测试订阅");
+  await expect(dialog.locator(".form-hint")).toBeVisible();
   await dialog
-    .getByLabel("订阅 URL")
-    .fill(`http://127.0.0.1:${fixturePort}/subscription`);
-  await dialog.getByRole("button", { name: "保存订阅", exact: true }).click();
+    .locator('input[type="file"][accept*="image/png"]')
+    .setInputFiles(qrFixture);
+  await expect(dialog.getByLabel("订阅 URL")).toHaveValue(
+    `http://127.0.0.1:${fixturePort}/subscription`,
+  );
+  await expect(dialog.getByText("域名预览：127.0.0.1")).toBeVisible();
+  await dialog.getByLabel("订阅名称").fill("本地测试订阅");
+  await dialog.getByRole("button", { name: "保存并更新", exact: true }).click();
   await expect
     .poll(async () => (await snapshot()).data.nodes.length, { timeout: 15000 })
     .toBe(2);
@@ -268,9 +324,26 @@ try {
   await expect
     .poll(async () => (await snapshot()).job.message, { timeout: 20000 })
     .toContain("2 / 2 可用");
-  check("Simple mode subscription add/update and current/all latency tests");
+  await page.getByRole("button", { name: "添加订阅", exact: true }).click();
+  await expect(dialog.locator(".form-hint")).toBeVisible();
+  await dialog.getByLabel("订阅名称").fill("重复订阅");
+  await dialog
+    .getByLabel("订阅 URL")
+    .fill(`http://127.0.0.1:${fixturePort}/subscription`);
+  await dialog.getByRole("button", { name: "保存并更新", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("已经存在");
+  await dialog.getByRole("button", { name: "关闭对话框" }).click();
+  await page.getByRole("button", { name: "关闭错误提示" }).click();
+  check(
+    "Quick clipboard/QR subscription, duplicate warning and current/all latency tests",
+  );
   await page.getByRole("button", { name: "完整模式" }).click();
   await nav("订阅").click();
+  await page.getByRole("button", { name: "添加订阅", exact: true }).click();
+  await expect(
+    dialog.getByText("识别剪贴板或二维码，保存后立即获取节点。"),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: "关闭对话框" }).click();
   subscriptionFailure = true;
   await page.getByRole("button", { name: "立即更新" }).click();
   await expect

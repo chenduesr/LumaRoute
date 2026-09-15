@@ -233,6 +233,9 @@ impl Service {
                 return Err("节点不存在".into());
             }
             d.active_node_id = Some(id.into());
+            d.recent_node_ids.retain(|node_id| node_id != id);
+            d.recent_node_ids.insert(0, id.into());
+            d.recent_node_ids.truncate(5);
             Ok(())
         })
     }
@@ -259,6 +262,7 @@ impl Service {
             if d.active_node_id.as_deref() == Some(id) {
                 d.active_node_id = None;
             }
+            d.recent_node_ids.retain(|node_id| node_id != id);
             Ok(())
         })
     }
@@ -293,6 +297,16 @@ impl Service {
         config::validate_http(&sub.url)?;
         if sub.name.trim().is_empty() || sub.name.len() > 200 || sub.interval_hours > 720 {
             return Err("订阅名称或更新间隔无效".into());
+        }
+        if self
+            .data
+            .lock()
+            .unwrap()
+            .subscriptions
+            .iter()
+            .any(|existing| existing.id != sub.id && existing.url.trim() == sub.url.trim())
+        {
+            return Err("该订阅地址已经存在，请直接更新现有订阅".into());
         }
         if sub.id.is_empty() {
             sub.id = id(&format!("{}{}", sub.url, now()));
@@ -337,6 +351,8 @@ impl Service {
             {
                 d.active_node_id = None;
             }
+            d.recent_node_ids
+                .retain(|node_id| d.nodes.iter().any(|node| &node.id == node_id));
             Ok(())
         })
     }
@@ -492,6 +508,8 @@ impl Service {
                         None
                     };
                 }
+                d.recent_node_ids
+                    .retain(|node_id| d.nodes.iter().any(|node| &node.id == node_id));
                 if let Some(s) = d.subscriptions.iter_mut().find(|s| s.id == id) {
                     s.last_updated = Some(now());
                     s.error = None;

@@ -88,6 +88,7 @@ export interface Snapshot {
     nodes: ProxyNode[];
     subscriptions: Subscription[];
     activeNodeId: string | null;
+    recentNodeIds: string[];
     trafficDate: string;
     todayUpload: number;
     todayDownload: number;

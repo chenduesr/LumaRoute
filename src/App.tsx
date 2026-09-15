@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   ChevronRight,
   Moon,
@@ -25,6 +26,7 @@ import { Hint } from "./components/ui/Hint";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { useTheme } from "./hooks/useTheme";
 import { useProxy } from "./hooks/useProxy";
+import { useWindowState } from "./hooks/useWindowState";
 import { defaultSettings, isSettings } from "./lib/storage";
 import type { ProxyNode, Subscription } from "./lib/proxy";
 import { ProxyOverview } from "./pages/ProxyOverview";
@@ -50,11 +52,26 @@ export default function App() {
     isSettings,
   );
   useTheme(appearance.value);
+  useWindowState(Boolean(appearance.value.simpleMode));
+  useEffect(() => {
+    if (!isTauri()) return;
+    const unlisten = listen("toggle-simple-mode", () =>
+      appearance.save({
+        ...appearance.value,
+        simpleMode: !appearance.value.simpleMode,
+      }),
+    ).catch(() => undefined);
+    return () =>
+      void unlisten.then((dispose) => {
+        if (dispose) dispose();
+      });
+  }, [appearance.value]);
   const { snapshot, error, setError, notice, busy, run } = useProxy();
   const [importing, setImporting] = useState(false);
   const [subDialog, setSubDialog] = useState<{
     editing?: Subscription;
     updateAfterSave?: boolean;
+    quickImport?: boolean;
   } | null>(null);
   const [detail, setDetail] = useState<ProxyNode | null>(null);
   const [confirm, setConfirm] = useState<{
@@ -90,7 +107,9 @@ export default function App() {
               onClearError={() => setError("")}
               onFullMode={openFullMode}
               onImport={() => setImporting(true)}
-              onAddSubscription={() => setSubDialog({ updateAfterSave: true })}
+              onAddSubscription={() =>
+                setSubDialog({ updateAfterSave: true, quickImport: true })
+              }
             />
           ) : (
             <div className="app-body">
@@ -141,7 +160,7 @@ export default function App() {
                     {snapshot?.connection.status === "connected"
                       ? "已连接"
                       : "未连接"}
-                    <span>v0.2.4</span>
+                    <span>v0.2.5</span>
                   </div>
                 </div>
               </aside>
@@ -273,7 +292,16 @@ export default function App() {
                           <Subscriptions
                             snapshot={snapshot}
                             run={run}
-                            onEdit={(editing) => setSubDialog({ editing })}
+                            onEdit={(editing) =>
+                              setSubDialog(
+                                editing
+                                  ? { editing }
+                                  : {
+                                      updateAfterSave: true,
+                                      quickImport: true,
+                                    },
+                              )
+                            }
                             onDelete={(s) =>
                               setConfirm({
                                 title: "删除订阅？",
@@ -337,6 +365,7 @@ export default function App() {
             editing={subDialog.editing}
             run={run}
             updateAfterSave={subDialog.updateAfterSave}
+            quickImport={subDialog.quickImport}
             onClose={() => setSubDialog(null)}
           />
         )}
