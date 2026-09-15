@@ -105,6 +105,7 @@ try {
         env: {
           ...process.env,
           MYRAY_TEST_ROOT: dataRoot,
+          WEBVIEW2_USER_DATA_FOLDER: resolve(dataRoot, "webview2"),
           WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${debugPort}`,
         },
       },
@@ -242,19 +243,31 @@ try {
     .toBe("disconnected");
   check("Native UI connect/disconnect without system proxy");
   subscriptionBody = `socks://127.0.0.1:${fixturePort}#Subscription-Fixture`;
-  await nav("订阅").click();
+  await page.getByRole("button", { name: "切换到简洁模式" }).click();
   await page.getByRole("button", { name: "添加订阅", exact: true }).click();
   await dialog.getByLabel("订阅名称").fill("本地测试订阅");
   await dialog
     .getByLabel("订阅 URL")
     .fill(`http://127.0.0.1:${fixturePort}/subscription`);
   await dialog.getByRole("button", { name: "保存订阅", exact: true }).click();
-  await page.getByRole("button", { name: "立即更新" }).click();
   await expect
     .poll(async () => (await snapshot()).data.nodes.length, { timeout: 15000 })
     .toBe(2);
-  subscriptionFailure = true;
   await expect.poll(async () => (await snapshot()).job.running).toBe(false);
+  expect((await snapshot()).data.subscriptions[0].id).toBeTruthy();
+  await page.getByRole("button", { name: "测试当前节点，HTTP 延迟" }).click();
+  await expect
+    .poll(async () => (await snapshot()).job.message, { timeout: 20000 })
+    .toContain("1 / 1 可用");
+  await page.getByRole("button", { name: "选择测速范围和方式" }).click();
+  await page.getByRole("menuitem", { name: "全部节点 · TCP 延迟" }).click();
+  await expect
+    .poll(async () => (await snapshot()).job.message, { timeout: 20000 })
+    .toContain("2 / 2 可用");
+  check("Simple mode subscription add/update and current/all latency tests");
+  await page.getByRole("button", { name: "完整模式" }).click();
+  await nav("订阅").click();
+  subscriptionFailure = true;
   await page.getByRole("button", { name: "立即更新" }).click();
   await expect
     .poll(async () => (await snapshot()).data.subscriptions[0].error, {
@@ -274,11 +287,15 @@ try {
   await page.screenshot({ path: resolve(artifactRoot, "native-logs.png") });
   await nav("设置").click();
   await page.getByRole("tab", { name: "更新", exact: true }).click();
+  await expect(page.getByLabel("新版发布源", { exact: true })).toHaveValue(
+    "chenduesr/MyRay-Lite-Tauri",
+  );
   await page.getByRole("button", { name: "检查应用更新", exact: true }).click();
   await expect
-    .poll(async () => (await snapshot()).job.message)
-    .toContain("请先配置新版");
-  check("Diagnostics export and separate app-update source guard");
+    .poll(async () => (await snapshot()).job.running, { timeout: 15000 })
+    .toBe(false);
+  expect((await snapshot()).job.message.length).toBeGreaterThan(0);
+  check("Diagnostics export and configured app-update source");
   if (process.argv.includes("--check-core-updates")) {
     for (const kind of ["xray", "singbox"]) {
       await action("updateCore", { kind });
@@ -300,7 +317,7 @@ try {
     width: innerWidth,
     height: innerHeight,
   }));
-  await page.setViewportSize({ width: 820, height: 620 });
+  await page.setViewportSize({ width: 900, height: 660 });
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -310,7 +327,7 @@ try {
     path: resolve(artifactRoot, "native-minimum-size.png"),
   });
   await page.setViewportSize(original);
-  check("820 x 620 layout without horizontal overflow");
+  check("900 x 660 layout without horizontal overflow");
   expect(pageErrors).toEqual([]);
   check("No JavaScript runtime errors");
   report.finished = new Date().toISOString();

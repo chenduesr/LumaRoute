@@ -58,8 +58,7 @@ async fn proxy_action(
             "saveSubscription" => {
                 let sub = serde_json::from_value(args["subscription"].clone())
                     .map_err(|_| "订阅数据格式无效")?;
-                state.save_subscription(sub)?;
-                Ok(Value::Null)
+                Ok(json!(state.save_subscription(sub)?))
             }
             "deleteSubscription" => {
                 state.delete_subscription(&text("id"))?;
@@ -175,14 +174,17 @@ async fn proxy_action(
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+    let mut builder = tauri::Builder::default();
+    if std::env::var_os("MYRAY_TEST_ROOT").is_none() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.show();
                 let _ = w.unminimize();
                 let _ = w.set_focus();
             }
-        }))
+        }));
+    }
+    let app = builder
         .setup(|app| {
             let isolated = std::env::var_os("MYRAY_TEST_ROOT").is_some();
             let root = std::env::var_os("MYRAY_TEST_ROOT")

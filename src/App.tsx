@@ -52,9 +52,10 @@ export default function App() {
   useTheme(appearance.value);
   const { snapshot, error, setError, notice, busy, run } = useProxy();
   const [importing, setImporting] = useState(false);
-  const [subDialog, setSubDialog] = useState<{ editing?: Subscription } | null>(
-    null,
-  );
+  const [subDialog, setSubDialog] = useState<{
+    editing?: Subscription;
+    updateAfterSave?: boolean;
+  } | null>(null);
   const [detail, setDetail] = useState<ProxyNode | null>(null);
   const [confirm, setConfirm] = useState<{
     title: string;
@@ -89,6 +90,7 @@ export default function App() {
               onClearError={() => setError("")}
               onFullMode={openFullMode}
               onImport={() => setImporting(true)}
+              onAddSubscription={() => setSubDialog({ updateAfterSave: true })}
             />
           ) : (
             <div className="app-body">
@@ -139,7 +141,7 @@ export default function App() {
                     {snapshot?.connection.status === "connected"
                       ? "已连接"
                       : "未连接"}
-                    <span>v0.2.2</span>
+                    <span>v0.2.3</span>
                   </div>
                 </div>
               </aside>
@@ -334,6 +336,7 @@ export default function App() {
           <SubscriptionDialog
             editing={subDialog.editing}
             run={run}
+            updateAfterSave={subDialog.updateAfterSave}
             onClose={() => setSubDialog(null)}
           />
         )}

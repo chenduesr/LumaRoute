@@ -1,6 +1,6 @@
 [package]
 name = "myray-lite-tauri"
-version = "0.2.2"
+version = "0.2.3"
 description = "MyRay Lite Windows desktop workspace"
 license = "GPL-3.0-only"
 edition = "2021"
@@ -45,4 +45,3 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
-

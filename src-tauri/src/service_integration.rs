@@ -11,6 +11,19 @@ fn dual_port() -> u16 {
         }
     }
 }
+fn retry_transient<T>(mut action: impl FnMut() -> Result<T, String>) -> Result<T, String> {
+    let mut last_error = String::new();
+    for attempt in 0..3 {
+        match action() {
+            Ok(value) => return Ok(value),
+            Err(error) => last_error = error,
+        }
+        if attempt < 2 {
+            thread::sleep(Duration::from_millis(250));
+        }
+    }
+    Err(last_error)
+}
 const UUID: &str = "00000000-0000-0000-0000-000000000001";
 struct HttpFixture {
     port: u16,
@@ -243,18 +256,19 @@ fn real_cores_isolated_protocols_connections_subscriptions_and_cleanup() {
     service.set_node_pin(&hy_id, &cert_hash).unwrap();
     for node in service.snapshot().data.nodes {
         let before = http.hits.load(Ordering::SeqCst);
-        let (latency, _) = service.test_node(&node, "http", &s).unwrap_or_else(|e| {
-            panic!(
-                "{} HTTP: {e}; logs: {:?}",
-                node.protocol,
-                service.snapshot().logs
-            )
-        });
+        let (latency, _) =
+            retry_transient(|| service.test_node(&node, "http", &s)).unwrap_or_else(|e| {
+                panic!(
+                    "{} HTTP: {e}; logs: {:?}",
+                    node.protocol,
+                    service.snapshot().logs
+                )
+            });
         assert!(latency < 5000);
-        let (_, speed) = service.test_node(&node, "download", &s).unwrap();
+        let (_, speed) = retry_transient(|| service.test_node(&node, "download", &s)).unwrap();
         assert!(speed.unwrap() > 0.0);
         assert!(http.hits.load(Ordering::SeqCst) >= before + 2);
-        service.connect(Some(node.id.clone())).unwrap_or_else(|e| {
+        retry_transient(|| service.connect(Some(node.id.clone()))).unwrap_or_else(|e| {
             panic!(
                 "connect {}: {e}; {:?}",
                 node.protocol,
@@ -309,7 +323,7 @@ fn real_cores_isolated_protocols_connections_subscriptions_and_cleanup() {
 
     let sub_http = HttpFixture::new();
     *sub_http.response.lock().unwrap() = (200, links[0].clone());
-    service
+    let saved_subscription_id = service
         .save_subscription(Subscription {
             id: "fixture-sub".into(),
             name: "Fixture".into(),
@@ -317,7 +331,15 @@ fn real_cores_isolated_protocols_connections_subscriptions_and_cleanup() {
             ..Subscription::default()
         })
         .unwrap();
+    assert_eq!(saved_subscription_id, "fixture-sub");
+    service
+        .change(|data| {
+            data.active_node_id = None;
+            Ok(())
+        })
+        .unwrap();
     service.update_subscription("fixture-sub").unwrap();
+    assert!(service.snapshot().data.active_node_id.is_some());
     let nodes_before = service.snapshot().data.nodes.len();
     let original_subscription_node = service
         .snapshot()

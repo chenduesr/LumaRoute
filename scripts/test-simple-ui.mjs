@@ -150,7 +150,7 @@ try {
   }
   browser = await chromium.launch({ headless: true, channel: "msedge" });
   const context = await browser.newContext({
-    viewport: { width: 1200, height: 800 },
+    viewport: { width: 1280, height: 860 },
   });
   await context.addInitScript((initialSnapshot) => {
     globalThis.isTauri = true;
@@ -159,8 +159,13 @@ try {
       invoke: async (command, payload) => {
         if (command === "proxy_snapshot") return initialSnapshot;
         if (command === "proxy_action") {
-          window.__MYRAY_TEST_ACTIONS__.push(payload?.action);
-          return null;
+          window.__MYRAY_TEST_ACTIONS__.push({
+            action: payload?.action,
+            args: payload?.args,
+          });
+          return payload?.action === "saveSubscription"
+            ? "fixture-new-sub"
+            : null;
         }
         return null;
       },
@@ -174,38 +179,62 @@ try {
     page.getByRole("heading", { name: "连接，从容一点。" }),
   ).toBeVisible();
   await page.screenshot({
-    path: resolve(artifactRoot, "full-mode-1200x800.png"),
+    path: resolve(artifactRoot, "full-mode-1280x860.png"),
   });
   await page.getByRole("button", { name: "切换到简洁模式" }).click();
   await expect(page.getByText("简洁模式", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "未连接" })).toBeVisible();
-  await expect(page.getByLabel("当前节点")).toHaveValue("fixture-node");
+  const nodeSelect = page.getByRole("combobox", {
+    name: "当前节点",
+    exact: true,
+  });
+  await expect(nodeSelect).toHaveValue("fixture-node");
+  await expect(nodeSelect).toContainText("58 ms");
   expect(
     await page.evaluate(
       () => JSON.parse(localStorage.getItem("myray.settings.v1")).simpleMode,
     ),
   ).toBe(true);
   await page.screenshot({
-    path: resolve(artifactRoot, "simple-mode-1200x800.png"),
+    path: resolve(artifactRoot, "simple-mode-1280x860.png"),
   });
-  await page.setViewportSize({ width: 820, height: 620 });
+  await page.getByRole("button", { name: "添加订阅" }).click();
+  await page.getByLabel("订阅名称").fill("新增订阅");
+  await page.getByLabel("订阅 URL").fill("https://example.test/new-sub");
+  await page.getByRole("button", { name: "保存订阅" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await page.getByRole("button", { name: "测试当前节点，HTTP 延迟" }).click();
+  await page.getByRole("button", { name: "选择测速范围和方式" }).click();
+  await page.getByRole("menuitem", { name: "全部节点 · TCP 延迟" }).click();
+  await page.setViewportSize({ width: 900, height: 660 });
   await expect
     .poll(() =>
       page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
     )
     .toBe(true);
   await page.screenshot({
-    path: resolve(artifactRoot, "simple-mode-820x620.png"),
+    path: resolve(artifactRoot, "simple-mode-900x660.png"),
   });
   await page.getByRole("button", { name: "更新全部订阅" }).click();
   await expect
-    .poll(() => page.evaluate(() => window.__MYRAY_TEST_ACTIONS__))
-    .toContain("updateAllSubscriptions");
+    .poll(() =>
+      page.evaluate(() =>
+        window.__MYRAY_TEST_ACTIONS__.map((item) => item.action),
+      ),
+    )
+    .toEqual(
+      expect.arrayContaining([
+        "saveSubscription",
+        "updateSubscription",
+        "test",
+        "updateAllSubscriptions",
+      ]),
+    );
   await page.getByRole("button", { name: "完整模式" }).click();
   await expect(page.getByRole("navigation", { name: "主导航" })).toBeVisible();
   expect(pageErrors).toEqual([]);
   console.log(
-    "PASS full/simple switch, persistence, subscription action and 820x620 layout",
+    "PASS simple mode subscription add/update, latency actions and 900x660 layout",
   );
 } finally {
   if (browser) await browser.close();

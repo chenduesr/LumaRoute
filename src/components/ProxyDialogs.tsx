@@ -151,10 +151,12 @@ export function SubscriptionDialog({
   editing,
   run,
   onClose,
+  updateAfterSave = false,
 }: {
   editing?: Subscription;
   run: Run;
   onClose: () => void;
+  updateAfterSave?: boolean;
 }) {
   const [sub, setSub] = useState<Subscription>(
     editing ?? {
@@ -183,6 +185,13 @@ export function SubscriptionDialog({
             { subscription: sub },
             "订阅已保存",
           );
+          if (r.ok && updateAfterSave) {
+            await run(
+              "updateSubscription",
+              { id: r.result as string },
+              "订阅已保存，正在获取节点",
+            );
+          }
           setBusy(false);
           if (r.ok) onClose();
         }}

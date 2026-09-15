@@ -283,7 +283,7 @@ impl Service {
             Ok(())
         })
     }
-    pub fn save_subscription(&self, mut sub: Subscription) -> Result<(), String> {
+    pub fn save_subscription(&self, mut sub: Subscription) -> Result<String, String> {
         {
             let job = self.job.lock().unwrap();
             if job.running && job.kind == "subscription" {
@@ -297,6 +297,7 @@ impl Service {
         if sub.id.is_empty() {
             sub.id = id(&format!("{}{}", sub.url, now()));
         }
+        let subscription_id = sub.id.clone();
         self.change(|d| {
             if let Some(old) = d.subscriptions.iter_mut().find(|s| s.id == sub.id) {
                 if sub.url == old.url {
@@ -313,7 +314,8 @@ impl Service {
                 d.subscriptions.push(sub);
             }
             Ok(())
-        })
+        })?;
+        Ok(subscription_id)
     }
     pub fn delete_subscription(&self, id: &str) -> Result<(), String> {
         if self.job.lock().unwrap().running {
@@ -480,7 +482,8 @@ impl Service {
                     .iter()
                     .any(|n| Some(&n.id) == d.active_node_id.as_ref())
                 {
-                    d.active_node_id = if active_was_from_subscription {
+                    d.active_node_id = if active_was_from_subscription || d.active_node_id.is_none()
+                    {
                         d.nodes
                             .iter()
                             .find(|node| node.subscription_id.as_deref() == Some(id))

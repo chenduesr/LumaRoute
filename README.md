@@ -1,6 +1,6 @@
 # MyRay Lite · Windows 双核心代理客户端
 
-使用 **Tauri 2 + React + TypeScript + Vite + Tailwind CSS + Radix UI**；业务逻辑由 Rust 实现。开发版本 **0.2.2**。
+使用 **Tauri 2 + React + TypeScript + Vite + Tailwind CSS + Radix UI**；业务逻辑由 Rust 实现。开发版本 **0.2.3**。
 
 这是 MyRay Lite 的 Tauri / Rust 重写版本。旧版使用 WPF / C#；新版使用独立数据目录，不读取或导入旧配置、订阅和节点。
 
@@ -35,7 +35,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib -- --test-threads=1
 npm run tauri build # Windows x64 EXE 安装包和 MSI
 ```
 
-测试需要已准备核心。测试的证书与密码均为本地公开夹具；不安装证书到系统，不连接真实节点，不更改系统代理。原生测试启动独立数据目录，结束后退出测试应用；请先关闭其他正在运行的新版实例。截图与报告位于 `test-artifacts/`。
+测试需要已准备核心。测试的证书与密码均为本地公开夹具；不安装证书到系统，不连接真实节点，不更改系统代理。原生测试使用独立应用和 WebView2 数据目录，结束后退出测试应用，可以与已安装的正式实例并存。截图与报告位于 `test-artifacts/`。
 
 ## 功能
 
@@ -48,7 +48,7 @@ npm run tauri build # Windows x64 EXE 安装包和 MSI
 - 日志：来源/级别筛选、滚动、复制、轮转、诊断、脱敏 ZIP 导出。
 - 更新：官方双核心更新和路由数据更新；应用更新源单独配置，仅检查并打开发布页面，不自动安装。
 - Fluent 深浅主题、紧凑布局、减少动态效果、Radix Dialog/Dropdown Menu/Tooltip/Switch。
-- 可持久化的简洁模式：保留节点选择、连接/断开及全部订阅更新，完整界面随时切回。
+- 可持久化的简洁模式：支持添加并立即更新订阅、节点选择、延迟结果、当前/全部节点 TCP 或 HTTP 测试、连接/断开及全部订阅更新，完整界面随时切回。
 - 启动时可依次更新全部订阅；失败时保留旧节点，并在更新结束后执行自动连接。
 
 Xray 已移除 `allowInsecure`：自签名 TLS 节点可在详情填写服务器证书 **SHA-256 指纹**（64 位十六进制，可含冒号）。不会自动把未知证书当作可信证书。
@@ -57,8 +57,8 @@ Xray 已移除 `allowInsecure`：自签名 TLS 节点可在详情填写服务器
 
 ## 安装包
 
-- `src-tauri/target/release/bundle/nsis/MyRay Lite_0.2.2_x64-setup.exe`
-- `src-tauri/target/release/bundle/msi/MyRay Lite_0.2.2_x64_zh-CN.msi`
+- `src-tauri/target/release/bundle/nsis/MyRay Lite_0.2.3_x64-setup.exe`
+- `src-tauri/target/release/bundle/msi/MyRay Lite_0.2.3_x64_zh-CN.msi`
 
 EXE 安装器面向当前用户，提供简体中文/英文；MSI 为简体中文。缺少 WebView2 时安装器联网下载。发布包尚未配置代码签名。直接运行 release 应用时需同时保留旁边的 `cores/` 资源目录，不能只复制单个主程序。
 
@@ -91,6 +91,10 @@ Tailwind 4 使用 `@tailwindcss/vite` 和 CSS `@import "tailwindcss"`，无重�
 ## 0.2.2 简洁模式与启动订阅更新
 
 新增可切换的简洁模式、订阅全部更新，以及启动更新后再自动连接。完整说明见 [0.2.2 发布说明](docs/RELEASE-0.2.2.md)。
+
+## 0.2.3 简洁模式订阅与测速
+
+简洁模式现可直接添加订阅并立即获取节点，支持当前或全部节点的 HTTP/TCP 延迟测试，并放大默认窗口和主要控件。完整说明见 [0.2.3 发布说明](docs/RELEASE-0.2.3.md)。
 
 ## 许可证
 

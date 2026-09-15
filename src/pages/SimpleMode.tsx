@@ -1,7 +1,11 @@
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   ArrowLeft,
+  ChevronDown,
+  Gauge,
   Moon,
   Network,
+  Plus,
   Power,
   RefreshCw,
   Settings2,
@@ -23,6 +27,7 @@ export function SimpleMode({
   onClearError,
   onFullMode,
   onImport,
+  onAddSubscription,
 }: {
   snapshot: Snapshot | null;
   error: string;
@@ -33,6 +38,7 @@ export function SimpleMode({
   onClearError: () => void;
   onFullMode: (page?: string) => void;
   onImport: () => void;
+  onAddSubscription: () => void;
 }) {
   const data = snapshot?.data;
   const connection = snapshot?.connection;
@@ -46,6 +52,29 @@ export function SimpleMode({
     (item) => item.id === node?.subscriptionId,
   );
   const unavailable = busy || Boolean(job?.running);
+  const sortedNodes = [...(data?.nodes ?? [])].sort((a, b) => {
+    const aDelay = a.lastError
+      ? Number.POSITIVE_INFINITY
+      : (a.delayMs ?? Number.POSITIVE_INFINITY);
+    const bDelay = b.lastError
+      ? Number.POSITIVE_INFINITY
+      : (b.delayMs ?? Number.POSITIVE_INFINITY);
+    return aDelay - bDelay;
+  });
+  const nodeResult = (item: (typeof sortedNodes)[number]) =>
+    item.lastError
+      ? "失败"
+      : item.delayMs === null
+        ? "未测试"
+        : `${item.delayMs} ms`;
+  const testNodes = (mode: "tcp" | "http", all: boolean) => {
+    const ids = all
+      ? sortedNodes.map((item) => item.id)
+      : node
+        ? [node.id]
+        : [];
+    if (ids.length) void run("test", { mode, ids });
+  };
 
   return (
     <div className="simple-shell">
@@ -147,6 +176,7 @@ export function SimpleMode({
               <span>当前节点</span>
               {data.nodes.length ? (
                 <select
+                  aria-label="当前节点"
                   value={data.activeNodeId ?? ""}
                   disabled={unavailable || connected || connecting}
                   onChange={(event) =>
@@ -156,9 +186,10 @@ export function SimpleMode({
                   <option value="" disabled>
                     选择节点
                   </option>
-                  {data.nodes.map((item) => (
+                  {sortedNodes.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.name} · {item.protocol.toUpperCase()}
+                      {item.name} · {item.protocol.toUpperCase()} ·{" "}
+                      {nodeResult(item)}
                     </option>
                   ))}
                 </select>
@@ -176,6 +207,13 @@ export function SimpleMode({
               {connection?.systemProxy ? "系统代理已接管" : "系统代理未接管"}
             </span>
             <span>{node ? coreName(node) : "Xray + sing-box"}</span>
+            {node && (
+              <span
+                className={`simple-latency ${node.lastError ? "failed" : ""}`}
+              >
+                {nodeResult(node)}
+              </span>
+            )}
           </div>
         </section>
 
@@ -196,12 +234,73 @@ export function SimpleMode({
         <div className="simple-actions">
           <button
             className="button secondary"
+            disabled={unavailable}
+            onClick={onAddSubscription}
+          >
+            <Plus size={15} />
+            添加订阅
+          </button>
+          <button
+            className="button secondary"
             disabled={unavailable || !data?.subscriptions.length}
             onClick={() => void run("updateAllSubscriptions")}
           >
             <RefreshCw size={15} />
             更新全部订阅
           </button>
+          <div className="simple-test-actions">
+            <button
+              className="button secondary simple-test-main"
+              aria-label="测试当前节点，HTTP 延迟"
+              disabled={unavailable || !node}
+              onClick={() => testNodes("http", false)}
+            >
+              <Gauge size={15} />
+              测试当前
+            </button>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button
+                  className="button secondary simple-test-menu"
+                  aria-label="选择测速范围和方式"
+                  disabled={unavailable || !sortedNodes.length}
+                >
+                  <ChevronDown size={15} />
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  className="dropdown"
+                  align="end"
+                  sideOffset={6}
+                >
+                  <DropdownMenu.Item
+                    disabled={!node}
+                    onSelect={() => testNodes("http", false)}
+                  >
+                    <Gauge size={15} />
+                    当前节点 · HTTP 延迟
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    disabled={!node}
+                    onSelect={() => testNodes("tcp", false)}
+                  >
+                    <Gauge size={15} />
+                    当前节点 · TCP 延迟
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Separator className="menu-separator" />
+                  <DropdownMenu.Item onSelect={() => testNodes("http", true)}>
+                    <Network size={15} />
+                    全部节点 · HTTP 延迟
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item onSelect={() => testNodes("tcp", true)}>
+                    <Network size={15} />
+                    全部节点 · TCP 延迟
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
+          </div>
           <button
             className="button secondary"
             onClick={() =>
@@ -216,7 +315,7 @@ export function SimpleMode({
 
       <footer className="simple-footer">
         <span>{data?.nodes.length ?? 0} 个节点</span>
-        <span>v0.2.2</span>
+        <span>v0.2.3</span>
       </footer>
     </div>
   );
