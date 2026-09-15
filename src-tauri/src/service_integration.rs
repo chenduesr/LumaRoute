@@ -285,13 +285,16 @@ fn real_cores_isolated_protocols_connections_subscriptions_and_cleanup() {
             .timeout(Duration::from_secs(5))
             .build()
             .unwrap();
-        assert!(client
-            .get(http.url())
-            .send()
-            .unwrap()
-            .text()
-            .unwrap()
-            .starts_with("local-test-data"));
+        let response = retry_transient(|| {
+            client
+                .get(http.url())
+                .send()
+                .and_then(|response| response.error_for_status())
+                .and_then(|response| response.text())
+                .map_err(|error| error.to_string())
+        })
+        .unwrap();
+        assert!(response.starts_with("local-test-data"));
         service.disconnect().unwrap();
         assert!(TcpStream::connect(("127.0.0.1", s.http_port)).is_err());
         assert!(!root.join("system-proxy-backup.json").exists());

@@ -168,7 +168,7 @@ impl Service {
         }
         let bytes =
             fs::read(self.root.join("profile.backup.json")).map_err(|_| "没有可恢复的备份")?;
-        let d: Data = serde_json::from_slice(&bytes).map_err(|_| "备份文件损坏")?;
+        let d = storage::decode(&bytes).map_err(|_| "备份文件损坏")?;
         if d.version != 1 {
             return Err("备份版本不支持".into());
         }
@@ -184,7 +184,7 @@ impl Service {
             )
             .map_err(|e| e.to_string())?;
         }
-        storage::atomic_write(&original, &bytes)?;
+        storage::save(&self.root, &d)?;
         *self.data.lock().unwrap() = d;
         *self.storage_error.lock().unwrap() = None;
         Ok(())

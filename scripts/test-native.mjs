@@ -1,5 +1,5 @@
 import { chromium, expect } from "@playwright/test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { createServer as tcpServer, createConnection } from "node:net";
 import { createSocket } from "node:dgram";
@@ -76,13 +76,13 @@ server.on("connect", (req, socket, head) => {
   socket.on("error", () => upstream.destroy());
   socket.on("close", () => upstream.destroy());
 });
-let child, browser, page;
+let child, browser, page, dataRoot;
 let safeToAct = false;
 const debugPort = Number(process.env.MYRAY_CDP_PORT || 9223);
 const releaseMode = process.argv.includes("--release");
 try {
   if (!process.argv.includes("--attach")) {
-    const dataRoot = await mkdtemp(resolve(artifactRoot, "native-run-"));
+    dataRoot = await mkdtemp(resolve(artifactRoot, "native-run-"));
     await writeFile(
       resolve(dataRoot, "profile.json"),
       JSON.stringify({
@@ -180,6 +180,10 @@ try {
     .poll(async () => (await snapshot()).data.settings.httpPort)
     .toBe(httpPort);
   expect((await snapshot()).data.settings.systemProxy).toBe(false);
+  const encryptedProfile = await readFile(resolve(dataRoot, "profile.json"));
+  expect(
+    encryptedProfile.subarray(0, 14).equals(Buffer.from("MYRAY-DPAPI-1\0")),
+  ).toBe(true);
   check("Settings validation and persistence through Rust");
   await page.getByRole("tab", { name: "外观", exact: true }).click();
   await page.getByLabel("主题", { exact: true }).selectOption("light");

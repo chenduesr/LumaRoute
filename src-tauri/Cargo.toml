@@ -1,6 +1,6 @@
 [package]
 name = "myray-lite-tauri"
-version = "0.2.3"
+version = "0.2.4"
 description = "MyRay Lite Windows desktop workspace"
 license = "GPL-3.0-only"
 edition = "2021"
@@ -33,7 +33,7 @@ sysinfo = "0.37"
 semver = "1"
 regex = "1"
 winreg = "0.55"
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Networking_WinInet", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Networking_WinInet", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security", "Win32_Security_Cryptography"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

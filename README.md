@@ -1,6 +1,6 @@
 # MyRay Lite · Windows 双核心代理客户端
 
-使用 **Tauri 2 + React + TypeScript + Vite + Tailwind CSS + Radix UI**；业务逻辑由 Rust 实现。开发版本 **0.2.3**。
+使用 **Tauri 2 + React + TypeScript + Vite + Tailwind CSS + Radix UI**；业务逻辑由 Rust 实现。开发版本 **0.2.4**。
 
 这是 MyRay Lite 的 Tauri / Rust 重写版本。旧版使用 WPF / C#；新版使用独立数据目录，不读取或导入旧配置、订阅和节点。
 
@@ -95,6 +95,10 @@ Tailwind 4 使用 `@tailwindcss/vite` 和 CSS `@import "tailwindcss"`，无重�
 ## 0.2.3 简洁模式订阅与测速
 
 简洁模式现可直接添加订阅并立即获取节点，支持当前或全部节点的 HTTP/TCP 延迟测试，并放大默认窗口和主要控件。完整说明见 [0.2.3 发布说明](docs/RELEASE-0.2.3.md)。
+
+## 0.2.4 Windows 凭据保护
+
+本地配置使用当前 Windows 用户的 DPAPI 加密保存。现有明文配置可直接读取，并会在下一次保存时自动迁移为密文；备份同样加密。完整说明见 [0.2.4 发布说明](docs/RELEASE-0.2.4.md)。
 
 ## 许可证
 

@@ -141,7 +141,7 @@ export default function App() {
                     {snapshot?.connection.status === "connected"
                       ? "已连接"
                       : "未连接"}
-                    <span>v0.2.3</span>
+                    <span>v0.2.4</span>
                   </div>
                 </div>
               </aside>

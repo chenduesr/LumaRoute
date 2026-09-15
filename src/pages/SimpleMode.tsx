@@ -315,7 +315,7 @@ export function SimpleMode({
 
       <footer className="simple-footer">
         <span>{data?.nodes.length ?? 0} 个节点</span>
-        <span>v0.2.3</span>
+        <span>v0.2.4</span>
       </footer>
     </div>
   );
