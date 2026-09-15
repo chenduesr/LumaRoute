@@ -160,7 +160,7 @@ export default function App() {
                     {snapshot?.connection.status === "connected"
                       ? "已连接"
                       : "未连接"}
-                    <span>v0.3.0</span>
+                    <span>v0.3.1</span>
                   </div>
                 </div>
               </aside>

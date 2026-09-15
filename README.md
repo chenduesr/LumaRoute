@@ -1,6 +1,6 @@
 # LumaRoute · Windows 双核心代理客户端
 
-使用 **Tauri 2 + React + TypeScript + Vite + Tailwind CSS + Radix UI**；业务逻辑由 Rust 实现。当前版本 **0.3.0**。
+使用 **Tauri 2 + React + TypeScript + Vite + Tailwind CSS + Radix UI**；业务逻辑由 Rust 实现。当前版本 **0.3.1**。
 
 LumaRoute 使用独立应用标识和数据目录，配置、订阅与节点均从空白状态开始。
 
@@ -8,7 +8,7 @@ LumaRoute 使用独立应用标识和数据目录，配置、订阅与节点均�
 
 ## 下载与版本关系
 
-- [下载 LumaRoute 0.3.0](https://github.com/chenduesr/LumaRoute/releases/tag/v0.3.0)：提供 EXE、MSI、源码包与 SHA-256 校验文件。
+- [下载 LumaRoute 0.3.1](https://github.com/chenduesr/LumaRoute/releases/tag/v0.3.1)：提供 EXE、MSI、源码包与 SHA-256 校验文件。
 - 应用更新源填写 `chenduesr/LumaRoute`。检查功能查询正式 Release；预发布版本通过发布页面手动下载。
 
 发布包尚未配置代码签名。完整功能和验证边界见下文及 [迁移说明](docs/MIGRATION.md)。
@@ -58,8 +58,8 @@ Xray 已移除 `allowInsecure`：自签名 TLS 节点可在详情填写服务器
 
 ## 安装包
 
-- `src-tauri/target/release/bundle/nsis/LumaRoute_0.3.0_x64-setup.exe`
-- `src-tauri/target/release/bundle/msi/LumaRoute_0.3.0_x64_zh-CN.msi`
+- `src-tauri/target/release/bundle/nsis/LumaRoute_0.3.1_x64-setup.exe`
+- `src-tauri/target/release/bundle/msi/LumaRoute_0.3.1_x64_zh-CN.msi`
 
 EXE 安装器面向当前用户，提供简体中文/英文；MSI 为简体中文。缺少 WebView2 时安装器联网下载。发布包尚未配置代码签名。直接运行 release 应用时需同时保留旁边的 `cores/` 资源目录，不能只复制单个主程序。
 
@@ -108,6 +108,10 @@ Tailwind 4 使用 `@tailwindcss/vite` 和 CSS `@import "tailwindcss"`，无重�
 ## 0.3.0 LumaRoute 品牌更新
 
 LumaRoute 采用“光线沿路径抵达”的 L 形路线标志；首次启动默认进入简洁模式。完整说明见 [0.3.0 发布说明](docs/RELEASE-0.3.0.md)。
+
+## 0.3.1 界面细节优化
+
+提高完整模式与简洁模式的文字、按钮和输入控件可读性，强化卡片层级、连接状态和深浅主题反馈，并修复日志来源换行。完整说明见 [0.3.1 发布说明](docs/RELEASE-0.3.1.md)。
 
 ## 许可证
 

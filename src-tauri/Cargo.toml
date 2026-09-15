@@ -1,6 +1,6 @@
 [package]
 name = "lumaroute"
-version = "0.3.0"
+version = "0.3.1"
 description = "LumaRoute Windows desktop workspace"
 license = "GPL-3.0-only"
 edition = "2021"
