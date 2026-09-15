@@ -175,7 +175,7 @@ async fn proxy_action(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default().plugin(tauri_plugin_clipboard_manager::init());
-    if std::env::var_os("MYRAY_TEST_ROOT").is_none() {
+    if std::env::var_os("LUMAROUTE_TEST_ROOT").is_none() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.show();
@@ -186,8 +186,8 @@ pub fn run() {
     }
     let app = builder
         .setup(|app| {
-            let isolated = std::env::var_os("MYRAY_TEST_ROOT").is_some();
-            let root = std::env::var_os("MYRAY_TEST_ROOT")
+            let isolated = std::env::var_os("LUMAROUTE_TEST_ROOT").is_some();
+            let root = std::env::var_os("LUMAROUTE_TEST_ROOT")
                 .map(std::path::PathBuf::from)
                 .unwrap_or(app.path().app_data_dir()?);
             let resources = if cfg!(debug_assertions) {
@@ -196,7 +196,7 @@ pub fn run() {
                 app.path().resource_dir()?.join("cores")
             };
             let state = Service::new(root, resources, isolated).map_err(std::io::Error::other)?;
-            let show = MenuItem::with_id(app, "show", "打开 MyRay Lite", true, None::<&str>)?;
+            let show = MenuItem::with_id(app, "show", "打开 LumaRoute", true, None::<&str>)?;
             let status = MenuItem::with_id(app, "status", "↑ 0 B/s  ↓ 0 B/s", false, None::<&str>)?;
             let current =
                 MenuItem::with_id(app, "current", "当前节点：未选择", false, None::<&str>)?;
@@ -224,7 +224,7 @@ pub fn run() {
             )?;
             TrayIconBuilder::with_id("main-tray")
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("MyRay Lite · 双核心代理客户端")
+                .tooltip("LumaRoute · 双核心代理客户端")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -437,7 +437,7 @@ pub fn run() {
             proxy_action
         ])
         .build(tauri::generate_context!())
-        .expect("failed to initialize MyRay Lite");
+        .expect("failed to initialize LumaRoute");
     app.run(|app, event| {
         if matches!(
             event,

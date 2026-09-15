@@ -1,16 +1,15 @@
-# MyRay Lite · Windows 双核心代理客户端
+# LumaRoute · Windows 双核心代理客户端
 
-使用 **Tauri 2 + React + TypeScript + Vite + Tailwind CSS + Radix UI**；业务逻辑由 Rust 实现。开发版本 **0.2.5**。
+使用 **Tauri 2 + React + TypeScript + Vite + Tailwind CSS + Radix UI**；业务逻辑由 Rust 实现。开发版本 **0.3.0**。
 
-这是 MyRay Lite 的 Tauri / Rust 重写版本。旧版使用 WPF / C#；新版使用独立数据目录，不读取或导入旧配置、订阅和节点。
+LumaRoute 使用独立应用标识和数据目录，配置、订阅与节点均从空白状态开始。
 
 目标平台为 Windows 10 / Windows 11 x64。目前已在 Windows 11 本机完成构建与隔离验证，Windows 10 独立机器验收尚未完成。
 
 ## 下载与版本关系
 
-- [新版安装包与源码包](https://github.com/chenduesr/MyRay-Lite-Tauri/releases/tag/v0.2.5)：当前正式发布为 0.2.5，EXE 与 MSI 选择一种安装即可。
-- [旧 WPF 仓库](https://github.com/chenduesr/MyRay-Lite)：保留旧版本源码和发布记录；两个项目的版本号独立。
-- 新版应用更新源填写 `chenduesr/MyRay-Lite-Tauri`，不能填写旧 WPF 仓库。当前检查功能查询正式 Release；预发布版本请通过上面的发布页面手动下载。
+- LumaRoute 0.3.0 正在开发，完成验证后提供 EXE、MSI 与源码包。
+- 应用更新源填写 `chenduesr/LumaRoute`。检查功能查询正式 Release；预发布版本通过发布页面手动下载。
 
 发布包尚未配置代码签名。完整功能和验证边界见下文及 [迁移说明](docs/MIGRATION.md)。
 
@@ -59,14 +58,14 @@ Xray 已移除 `allowInsecure`：自签名 TLS 节点可在详情填写服务器
 
 ## 安装包
 
-- `src-tauri/target/release/bundle/nsis/MyRay Lite_0.2.5_x64-setup.exe`
-- `src-tauri/target/release/bundle/msi/MyRay Lite_0.2.5_x64_zh-CN.msi`
+- `src-tauri/target/release/bundle/nsis/LumaRoute_0.3.0_x64-setup.exe`
+- `src-tauri/target/release/bundle/msi/LumaRoute_0.3.0_x64_zh-CN.msi`
 
 EXE 安装器面向当前用户，提供简体中文/英文；MSI 为简体中文。缺少 WebView2 时安装器联网下载。发布包尚未配置代码签名。直接运行 release 应用时需同时保留旁边的 `cores/` 资源目录，不能只复制单个主程序。
 
 ## 数据与结构
 
-新版数据位于 Tauri 当前用户数据目录（Windows 通常为 `%APPDATA%\com.myraylite.desktop`），可在设置 → 外观中打开。配置原子保存，并保留上一次有效备份；读取损坏配置时保护原文件。节点和订阅含凭据，保存在本机，请妥善保管。
+数据位于 Tauri 当前用户数据目录（Windows 通常为 `%APPDATA%\com.lumaroute.desktop`），可在设置 → 外观中打开。配置原子保存，并保留上一次有效备份；读取损坏配置时保护原文件。节点和订阅含凭据，保存在本机，请妥善保管。
 
 ```text
 src/
@@ -105,6 +104,10 @@ Tailwind 4 使用 `@tailwindcss/vite` 和 CSS `@import "tailwindcss"`，无重�
 ## 0.2.5 快捷订阅、托盘与窗口记忆
 
 新增剪贴板和二维码订阅导入、重复地址提醒、完整托盘快捷操作，以及按模式独立保存的窗口位置/尺寸/最大化状态。完整说明见 [0.2.5 发布说明](docs/RELEASE-0.2.5.md)。
+
+## 0.3.0 LumaRoute 品牌更新
+
+应用更名为 LumaRoute，采用“光线沿路径抵达”的 L 形路线标志；新安装及品牌升级后首次启动默认进入简洁模式。完整说明见 [0.3.0 发布说明](docs/RELEASE-0.3.0.md)。
 
 ## 许可证
 

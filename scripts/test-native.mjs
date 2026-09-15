@@ -44,7 +44,7 @@ const udpPort = async () => {
   }
   throw new Error("No dual TCP/UDP test port available");
 };
-const httpPort = await port(),
+let httpPort = await port(),
   socksPort = await udpPort();
 let subscriptionBody = "",
   subscriptionFailure = false;
@@ -59,6 +59,9 @@ const server = createServer((req, res) => {
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const fixturePort = server.address().port;
+if (httpPort === fixturePort || httpPort === socksPort) httpPort = await port();
+while (socksPort === fixturePort || socksPort === httpPort)
+  socksPort = await udpPort();
 const qrFixture = resolve(artifactRoot, "native-subscription-qr.png");
 await QRCode.toFile(qrFixture, `http://127.0.0.1:${fixturePort}/subscription`, {
   width: 320,
@@ -84,7 +87,7 @@ server.on("connect", (req, socket, head) => {
 });
 let child, browser, page, dataRoot;
 let safeToAct = false;
-const debugPort = Number(process.env.MYRAY_CDP_PORT || 9223);
+const debugPort = Number(process.env.LUMAROUTE_CDP_PORT || 9223);
 const releaseMode = process.argv.includes("--release");
 try {
   if (!process.argv.includes("--attach")) {
@@ -102,7 +105,7 @@ try {
     );
     child = spawn(
       releaseMode
-        ? resolve("src-tauri/target/release/myray-lite-tauri.exe")
+        ? resolve("src-tauri/target/release/lumaroute.exe")
         : process.execPath,
       releaseMode ? [] : ["scripts/tauri.mjs", "dev", "--no-watch"],
       {
@@ -110,7 +113,7 @@ try {
         stdio: ["ignore", "pipe", "pipe"],
         env: {
           ...process.env,
-          MYRAY_TEST_ROOT: dataRoot,
+          LUMAROUTE_TEST_ROOT: dataRoot,
           WEBVIEW2_USER_DATA_FOLDER: resolve(dataRoot, "webview2"),
           WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${debugPort}`,
         },
@@ -157,15 +160,19 @@ try {
   if (initial.data.nodes.length || initial.data.subscriptions.length)
     throw new Error("Tests require an empty isolated profile");
   safeToAct = true;
-  await expect(
-    page.getByRole("heading", { name: "连接，从容一点。" }),
-  ).toBeVisible();
+  await expect(page.locator(".simple-brand strong")).toHaveText("LumaRoute");
+  await expect(page.getByText("简洁模式", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "未连接" })).toBeVisible();
   expect(
     initial.core.installed &&
       initial.core.singboxInstalled &&
       initial.core.geoReady,
   ).toBe(true);
-  check("Native Tauri IPC and bundled Xray/sing-box resources");
+  check("Default simple mode, LumaRoute brand and bundled core resources");
+  await page.getByRole("button", { name: "完整模式" }).click();
+  await expect(
+    page.getByRole("heading", { name: "连接，从容一点。" }),
+  ).toBeVisible();
   const windowInvoke = (command, payload = {}) =>
     page.evaluate(
       ({ command, payload }) =>
@@ -185,7 +192,7 @@ try {
   await expect
     .poll(() =>
       page.evaluate(() =>
-        JSON.parse(localStorage.getItem("myray.window.full.v1") || "null"),
+        JSON.parse(localStorage.getItem("lumaroute.window.full.v1") || "null"),
       ),
     )
     .not.toBeNull();
@@ -196,7 +203,9 @@ try {
   await expect
     .poll(() =>
       page.evaluate(() =>
-        JSON.parse(localStorage.getItem("myray.window.simple.v1") || "null"),
+        JSON.parse(
+          localStorage.getItem("lumaroute.window.simple.v1") || "null",
+        ),
       ),
     )
     .not.toBeNull();
@@ -233,7 +242,7 @@ try {
   expect((await snapshot()).data.settings.systemProxy).toBe(false);
   const encryptedProfile = await readFile(resolve(dataRoot, "profile.json"));
   expect(
-    encryptedProfile.subarray(0, 14).equals(Buffer.from("MYRAY-DPAPI-1\0")),
+    encryptedProfile.subarray(0, 18).equals(Buffer.from("LUMAROUTE-DPAPI-1\0")),
   ).toBe(true);
   check("Settings validation and persistence through Rust");
   await page.getByRole("tab", { name: "外观", exact: true }).click();
@@ -365,7 +374,7 @@ try {
   await nav("设置").click();
   await page.getByRole("tab", { name: "更新", exact: true }).click();
   await expect(page.getByLabel("新版发布源", { exact: true })).toHaveValue(
-    "chenduesr/MyRay-Lite-Tauri",
+    "chenduesr/LumaRoute",
   );
   await page.getByRole("button", { name: "检查应用更新", exact: true }).click();
   await expect

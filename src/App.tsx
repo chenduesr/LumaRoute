@@ -47,7 +47,7 @@ const pages = [
 export default function App() {
   const [page, setPage] = useState("overview");
   const appearance = usePersistentState(
-    "myray.settings.v1",
+    "lumaroute.settings.v1",
     defaultSettings,
     isSettings,
   );
@@ -115,10 +115,10 @@ export default function App() {
             <div className="app-body">
               <aside className="sidebar">
                 <div className="brand">
-                  <img src={mark} alt="MyRay Lite 标志" />
+                  <img src={mark} alt="LumaRoute 标志" />
                   <div>
                     <strong>
-                      MyRay <span>Lite</span>
+                      Luma<span>Route</span>
                     </strong>
                     <small>连接，从容一点。</small>
                   </div>
@@ -160,7 +160,7 @@ export default function App() {
                     {snapshot?.connection.status === "connected"
                       ? "已连接"
                       : "未连接"}
-                    <span>v0.2.5</span>
+                    <span>v0.3.0</span>
                   </div>
                 </div>
               </aside>

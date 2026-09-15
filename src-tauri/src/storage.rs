@@ -6,7 +6,7 @@ use windows_sys::Win32::{
         CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
     },
 };
-const MAGIC: &[u8] = b"MYRAY-DPAPI-1\0";
+const MAGIC: &[u8] = b"LUMAROUTE-DPAPI-1\0";
 
 fn protect(bytes: &[u8]) -> Result<Vec<u8>, String> {
     let input = CRYPT_INTEGER_BLOB {
@@ -104,6 +104,7 @@ pub fn load(root: &Path) -> Result<Data, String> {
     config::validate(&data.settings)?;
     Ok(data)
 }
+
 pub fn save(root: &Path, data: &Data) -> Result<(), String> {
     let path = root.join("profile.json");
     if path.exists() {

@@ -91,13 +91,17 @@ impl Service {
         });
         service.refresh_core();
         if !isolated {
+            let start_on_boot = service.data.lock().unwrap().settings.start_on_boot;
+            if let Err(error) = windows::autostart(start_on_boot) {
+                service.log("ERROR", "system", &format!("登录启动状态同步失败：{error}"));
+            }
             match windows::restore(&service.root) {
                 Ok(true) => service.log("WARN", "system", "已恢复上次异常退出遗留的系统代理"),
                 Err(e) => service.log("ERROR", "system", &e),
                 _ => {}
             }
         }
-        service.log("INFO", "app", "MyRay Lite 原生业务服务已启动");
+        service.log("INFO", "app", "LumaRoute 原生业务服务已启动");
         Ok(service)
     }
     pub fn log(&self, level: &str, source: &str, message: &str) {
@@ -404,7 +408,7 @@ impl Service {
     fn client(timeout: u64) -> Result<reqwest::blocking::Client, String> {
         reqwest::blocking::Client::builder()
             .no_proxy()
-            .user_agent(concat!("MyRayLite/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("LumaRoute/", env!("CARGO_PKG_VERSION")))
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(timeout))
             .build()
@@ -1044,7 +1048,7 @@ impl Service {
         let dir = self.root.join("diagnostics");
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let path = dir.join(format!(
-            "myray-diagnostics-{}.zip",
+            "lumaroute-diagnostics-{}.zip",
             chrono::Utc::now().format("%Y%m%d-%H%M%S")
         ));
         let file = fs::File::create(&path).map_err(|e| e.to_string())?;

@@ -138,11 +138,10 @@ pub fn autostart(enabled: bool) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     if enabled {
         let path = std::env::current_exe().map_err(|e| e.to_string())?;
-        key.set_value("MyRayLiteTauri", &format!("\"{}\"", path.display()))
+        key.set_value("LumaRoute", &format!("\"{}\"", path.display()))
             .map_err(|e| e.to_string())?;
-    } else if key.get_raw_value("MyRayLiteTauri").is_ok() {
-        key.delete_value("MyRayLiteTauri")
-            .map_err(|e| e.to_string())?;
+    } else if key.get_raw_value("LumaRoute").is_ok() {
+        key.delete_value("LumaRoute").map_err(|e| e.to_string())?;
     }
     Ok(())
 }

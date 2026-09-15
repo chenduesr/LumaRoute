@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    myray_lite_tauri_lib::run()
+    lumaroute_lib::run()
 }

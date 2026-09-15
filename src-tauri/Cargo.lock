@@ -2189,6 +2189,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
+name = "lumaroute"
+version = "0.3.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "percent-encoding",
+ "regex",
+ "reqwest 0.12.28",
+ "semver",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "sysinfo",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-single-instance",
+ "tempfile",
+ "url",
+ "windows-sys 0.61.2",
+ "winreg",
+ "zip",
+]
+
+[[package]]
 name = "markup5ever"
 version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2280,32 +2306,6 @@ dependencies = [
  "serde",
  "thiserror 2.0.20",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "myray-lite-tauri"
-version = "0.2.5"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "percent-encoding",
- "regex",
- "reqwest 0.12.28",
- "semver",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2",
- "sysinfo",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-single-instance",
- "tempfile",
- "url",
- "windows-sys 0.61.2",
- "winreg",
- "zip",
 ]
 
 [[package]]

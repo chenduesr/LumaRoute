@@ -14,7 +14,7 @@ type SavedWindow = {
   maximized: boolean;
 };
 const key = (simple: boolean) =>
-  `myray.window.${simple ? "simple" : "full"}.v1`;
+  `lumaroute.window.${simple ? "simple" : "full"}.v1`;
 
 export function useWindowState(simpleMode: boolean) {
   const mode = useRef(simpleMode);

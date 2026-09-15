@@ -7,7 +7,7 @@ $version = (Get-Content -LiteralPath (Join-Path $projectRoot 'package.json') -Ra
 if (!$OutputDirectory) { $OutputDirectory = Join-Path (Split-Path $projectRoot -Parent) "releases/$version" }
 $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
-$archivePath = Join-Path $OutputDirectory "MyRay-Lite-$version-source.zip"
+$archivePath = Join-Path $OutputDirectory "LumaRoute-$version-source.zip"
 $rootFiles = @('.gitignore','.prettierignore','LICENSE','README.md','index.html','package.json','package-lock.json','tsconfig.json','tsconfig.node.json','vite.config.ts')
 $directories = @('src','public','scripts','docs','tests/fixtures','src-tauri/src','src-tauri/icons','src-tauri/capabilities','src-tauri/resources')
 $files = @()
@@ -28,7 +28,7 @@ try {
         if (!$file.FullName.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) { throw 'Source path outside project' }
         if ($file.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw "Refusing linked file: $($file.Name)" }
         $relative = $file.FullName.Substring($prefix.Length).Replace('\','/')
-        $entryName = "MyRay-Lite-$version/$relative"
+        $entryName = "LumaRoute-$version/$relative"
         [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $file.FullName, $entryName, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
     }
 } finally { $zip.Dispose(); $stream.Dispose() }
@@ -37,7 +37,7 @@ $zip = [System.IO.Compression.ZipFile]::OpenRead($archivePath)
 try {
     if ($zip.Entries.Count -ne $files.Count) { throw 'Source archive file count mismatch' }
     foreach ($entry in $zip.Entries) {
-        $relative = $entry.FullName.Substring("MyRay-Lite-$version/".Length)
+        $relative = $entry.FullName.Substring("LumaRoute-$version/".Length)
         $source = [System.IO.File]::OpenRead((Join-Path $projectRoot $relative))
         $packed = $entry.Open()
         $sha = [System.Security.Cryptography.SHA256]::Create()

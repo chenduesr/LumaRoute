@@ -82,7 +82,7 @@ export function SimpleMode({
         <div className="simple-brand">
           <img src={mark} alt="" />
           <div>
-            <strong>MyRay Lite</strong>
+            <strong>LumaRoute</strong>
             <span>简洁模式</span>
           </div>
         </div>
@@ -315,7 +315,7 @@ export function SimpleMode({
 
       <footer className="simple-footer">
         <span>{data?.nodes.length ?? 0} 个节点</span>
-        <span>v0.2.5</span>
+        <span>v0.3.0</span>
       </footer>
     </div>
   );

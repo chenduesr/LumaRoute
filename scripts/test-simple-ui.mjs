@@ -47,7 +47,7 @@ const settings = {
   testConcurrency: 8,
   testRetries: 1,
   downloadBytes: 1048576,
-  updateRepo: "chenduesr/MyRay-Lite-Tauri",
+  updateRepo: "chenduesr/LumaRoute",
   autoCheckUpdates: false,
 };
 const snapshot = {
@@ -164,7 +164,7 @@ try {
       value: { readText: async () => "https://clipboard.example/sub" },
       configurable: true,
     });
-    window.__MYRAY_TEST_ACTIONS__ = [];
+    window.__LUMAROUTE_TEST_ACTIONS__ = [];
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
       unregisterListener: () => {},
     };
@@ -180,7 +180,7 @@ try {
       invoke: async (command, payload) => {
         if (command === "proxy_snapshot") return initialSnapshot;
         if (command === "proxy_action") {
-          window.__MYRAY_TEST_ACTIONS__.push({
+          window.__LUMAROUTE_TEST_ACTIONS__.push({
             action: payload?.action,
             args: payload?.args,
           });
@@ -206,11 +206,18 @@ try {
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto(`http://127.0.0.1:${port}`);
   await delay(300);
-  if (!(await page.getByRole("heading", { name: "连接，从容一点。" }).count())) {
+  if (!(await page.getByRole("heading", { name: "未连接" }).count())) {
     throw new Error(
       `Application did not render. Errors: ${pageErrors.join(" | ")} Body: ${await page.locator("body").innerText()}`,
     );
   }
+  await expect(page.locator(".simple-brand strong")).toHaveText("LumaRoute");
+  await expect(page.getByText("简洁模式", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "未连接" })).toBeVisible();
+  await page.screenshot({
+    path: resolve(artifactRoot, "simple-default-1280x860.png"),
+  });
+  await page.getByRole("button", { name: "完整模式" }).click();
   await expect(
     page.getByRole("heading", { name: "连接，从容一点。" }),
   ).toBeVisible();
@@ -220,17 +227,18 @@ try {
   await page.getByRole("button", { name: "切换到简洁模式" }).click();
   await expect(page.getByText("简洁模式", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "未连接" })).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        JSON.parse(localStorage.getItem("lumaroute.settings.v1")).simpleMode,
+    ),
+  ).toBe(true);
   const nodeSelect = page.getByRole("combobox", {
     name: "当前节点",
     exact: true,
   });
   await expect(nodeSelect).toHaveValue("fixture-node");
   await expect(nodeSelect).toContainText("58 ms");
-  expect(
-    await page.evaluate(
-      () => JSON.parse(localStorage.getItem("myray.settings.v1")).simpleMode,
-    ),
-  ).toBe(true);
   await page.screenshot({
     path: resolve(artifactRoot, "simple-mode-1280x860.png"),
   });
@@ -265,7 +273,7 @@ try {
   await expect
     .poll(() =>
       page.evaluate(() =>
-        window.__MYRAY_TEST_ACTIONS__.map((item) => item.action),
+        window.__LUMAROUTE_TEST_ACTIONS__.map((item) => item.action),
       ),
     )
     .toEqual(

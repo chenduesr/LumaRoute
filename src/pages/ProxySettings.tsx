@@ -405,7 +405,7 @@ export function ProxySettings({
               </button>
             </div>
             <p className="config-note">
-              MyRay Lite 0.2.2 · Tauri 2 / React / Rust
+              LumaRoute 0.3.0 · Tauri 2 / React / Rust
               <br />
               旧项目与旧数据保持独立。节点凭据保存在当前用户的应用数据目录，请妥善保管。
             </p>

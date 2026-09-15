@@ -23,7 +23,7 @@ export function Titlebar({ onError }: { onError: (message: string) => void }) {
         onDoubleClick={() => void action("toggleMaximize")}
       >
         <img src={mark} alt="" width="18" height="18" />
-        <span>MyRay Lite</span>
+        <span>LumaRoute</span>
         <span className="titlebar-caption">双核心代理客户端</span>
       </div>
       {isTauri() ? (

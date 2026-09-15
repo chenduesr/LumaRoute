@@ -3,7 +3,7 @@ export const defaultSettings: Settings = {
   theme: "dark",
   compact: false,
   reducedMotion: false,
-  simpleMode: false,
+  simpleMode: true,
 };
 export const isSettings = (value: unknown): value is Settings => {
   if (!value || typeof value !== "object") return false;

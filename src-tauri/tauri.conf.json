@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "MyRay Lite",
-  "version": "0.2.5",
-  "identifier": "com.myraylite.desktop",
+  "productName": "LumaRoute",
+  "version": "0.3.0",
+  "identifier": "com.lumaroute.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "MyRay Lite",
+        "title": "LumaRoute",
         "width": 1280,
         "height": 860,
         "minWidth": 900,
@@ -29,7 +29,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "msi"],
-    "shortDescription": "MyRay Lite dual-core proxy client",
+    "shortDescription": "LumaRoute dual-core proxy client",
     "windows": {
       "nsis": {
         "installMode": "currentUser",

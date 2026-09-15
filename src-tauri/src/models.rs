@@ -65,7 +65,7 @@ impl Default for Settings {
             test_concurrency: 8,
             test_retries: 1,
             download_bytes: 1048576,
-            update_repo: "chenduesr/MyRay-Lite-Tauri".into(),
+            update_repo: "chenduesr/LumaRoute".into(),
             auto_check_updates: false,
         }
     }
