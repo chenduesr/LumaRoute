@@ -27,6 +27,7 @@ const settings = {
   bypassMainland: true,
   startOnBoot: false,
   autoConnect: false,
+  autoRecoverConnection: true,
   updateSubscriptionsOnLaunch: true,
   minimizeToTray: true,
   directDomains: "",
@@ -114,7 +115,13 @@ const snapshot = {
     systemProxy: false,
     error: null,
   },
-  job: { running: false, kind: "", completed: 0, total: 0, message: "" },
+  job: {
+    running: false,
+    kind: "startup",
+    completed: 1,
+    total: 1,
+    message: "当前已是最新版本（发布版本 v0.3.2）",
+  },
   traffic: {
     uploadSpeed: 0,
     downloadSpeed: 0,
@@ -212,7 +219,12 @@ try {
     );
   }
   await expect(page.locator(".simple-brand strong")).toHaveText("LumaRoute");
+  await expect(page.locator(".simple-shell")).toBeVisible();
   await expect(page.getByText("简洁模式", { exact: true })).toBeVisible();
+  await expect(page.getByText("双核心代理客户端", { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(page.getByText(/当前已是最新版本/)).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "未连接" })).toBeVisible();
   await page.screenshot({
     path: resolve(artifactRoot, "simple-default-1280x860.png"),
@@ -225,7 +237,7 @@ try {
     path: resolve(artifactRoot, "full-mode-1280x860.png"),
   });
   await page.getByRole("button", { name: "切换到简洁模式" }).click();
-  await expect(page.getByText("简洁模式", { exact: true })).toBeVisible();
+  await expect(page.locator(".simple-shell")).toBeVisible();
   await expect(page.getByRole("heading", { name: "未连接" })).toBeVisible();
   expect(
     await page.evaluate(

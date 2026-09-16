@@ -113,6 +113,16 @@ pub fn enable(root: &Path, http: u16, socks: u16) -> Result<(), String> {
     notify();
     Ok(())
 }
+
+pub fn proxy_matches(http: u16, socks: u16) -> Result<bool, String> {
+    let key = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags(INTERNET, KEY_READ)
+        .map_err(|e| e.to_string())?;
+    let enabled: u32 = key.get_value("ProxyEnable").unwrap_or(0);
+    let current: String = key.get_value("ProxyServer").unwrap_or_default();
+    let expected = format!("http=127.0.0.1:{http};https=127.0.0.1:{http};socks=127.0.0.1:{socks}");
+    Ok(enabled == 1 && current.eq_ignore_ascii_case(&expected))
+}
 pub fn restore(root: &Path) -> Result<bool, String> {
     let path = root.join("system-proxy-backup.json");
     if !path.exists() {

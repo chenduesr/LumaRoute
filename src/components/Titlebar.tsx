@@ -24,7 +24,6 @@ export function Titlebar({ onError }: { onError: (message: string) => void }) {
       >
         <img src={mark} alt="" width="18" height="18" />
         <span>LumaRoute</span>
-        <span className="titlebar-caption">双核心代理客户端</span>
       </div>
       {isTauri() ? (
         <div className="window-controls">

@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { Copy, Download, Stethoscope, Trash2 } from "lucide-react";
+import {
+  CircleAlert,
+  CircleCheck,
+  CircleMinus,
+  CircleX,
+  Copy,
+  Download,
+  Stethoscope,
+  Trash2,
+} from "lucide-react";
 import type { Snapshot } from "../lib/proxy";
 import type { Run } from "../components/ProxyDialogs";
 export function Logs({
@@ -17,7 +26,7 @@ export function Logs({
   const [level, setLevel] = useState("");
   const [source, setSource] = useState("");
   const [follow, setFollow] = useState(true);
-  const end = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   const list = snapshot.logs.filter(
     (l) =>
       (!level || l.level === level) &&
@@ -25,7 +34,8 @@ export function Logs({
       l.message.toLowerCase().includes(query.toLowerCase()),
   );
   useEffect(() => {
-    if (follow) end.current?.scrollIntoView({ block: "nearest" });
+    if (follow && panel.current)
+      panel.current.scrollTop = panel.current.scrollHeight;
   }, [snapshot.logs[snapshot.logs.length - 1]?.timestamp, follow]);
   return (
     <>
@@ -37,12 +47,54 @@ export function Logs({
         </div>
         <button
           className="button secondary"
+          disabled={snapshot.job.running}
           onClick={() => void run("diagnostics")}
         >
           <Stethoscope size={16} />
-          运行诊断
+          {snapshot.job.running && snapshot.job.kind === "diagnostics"
+            ? "诊断中…"
+            : "运行诊断"}
         </button>
       </div>
+      {snapshot.diagnostics && (
+        <section className="diagnostic-report" aria-label="最近一次连接诊断">
+          <div className="diagnostic-summary">
+            <div>
+              <strong>{snapshot.diagnostics.summary}</strong>
+              <span>
+                {new Date(snapshot.diagnostics.completedAt).toLocaleString(
+                  "zh-CN",
+                )}
+              </span>
+            </div>
+          </div>
+          <div className="diagnostic-checks">
+            {snapshot.diagnostics.checks.map((check) => {
+              const Icon =
+                check.status === "ok"
+                  ? CircleCheck
+                  : check.status === "failed"
+                    ? CircleX
+                    : check.status === "warning"
+                      ? CircleAlert
+                      : CircleMinus;
+              return (
+                <article
+                  key={check.key}
+                  className={`diagnostic-check ${check.status}`}
+                >
+                  <Icon size={18} />
+                  <div>
+                    <strong>{check.label}</strong>
+                    <p>{check.detail}</p>
+                    {check.suggestion && <small>{check.suggestion}</small>}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
       <div className="log-toolbar">
         <input
           aria-label="搜索日志"
@@ -108,7 +160,7 @@ export function Logs({
           清空
         </button>
       </div>
-      <div className="log-panel">
+      <div className="log-panel" ref={panel}>
         {list.length ? (
           list.map((l, i) => (
             <div
@@ -124,7 +176,6 @@ export function Logs({
         ) : (
           <p className="empty-log">暂无匹配日志</p>
         )}
-        <div ref={end} />
       </div>
       <p className="muted tiny">
         诊断包不含节点原文、订阅地址和凭据。导出后可在数据目录的 diagnostics
@@ -133,4 +184,3 @@ export function Logs({
     </>
   );
 }
-

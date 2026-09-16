@@ -16,11 +16,21 @@ const check = (name) => {
   console.log("PASS", name);
 };
 const port = async () => {
-  const s = tcpServer();
-  await new Promise((r) => s.listen(0, "127.0.0.1", r));
-  const n = s.address().port;
-  await new Promise((r) => s.close(r));
-  return n;
+  for (let i = 0; i < 100; i++) {
+    const candidate = 12000 + Math.floor(Math.random() * 7000);
+    const s = tcpServer();
+    try {
+      await new Promise((resolveListen, reject) => {
+        s.once("error", reject);
+        s.listen(candidate, "127.0.0.1", resolveListen);
+      });
+      await new Promise((resolveClose) => s.close(resolveClose));
+      return candidate;
+    } catch {
+      s.close();
+    }
+  }
+  throw new Error("No stable TCP test port available");
 };
 const udpPort = async () => {
   for (let i = 0; i < 100; i++) {
@@ -161,7 +171,11 @@ try {
     throw new Error("Tests require an empty isolated profile");
   safeToAct = true;
   await expect(page.locator(".simple-brand strong")).toHaveText("LumaRoute");
+  await expect(page.locator(".simple-shell")).toBeVisible();
   await expect(page.getByText("简洁模式", { exact: true })).toBeVisible();
+  await expect(page.getByText("双核心代理客户端", { exact: true })).toHaveCount(
+    0,
+  );
   await expect(page.getByRole("heading", { name: "未连接" })).toBeVisible();
   expect(
     initial.core.installed &&
@@ -191,32 +205,46 @@ try {
   });
   await expect
     .poll(() =>
-      page.evaluate(() =>
-        JSON.parse(localStorage.getItem("lumaroute.window.full.v1") || "null"),
-      ),
+      page.evaluate(() => {
+        const saved = JSON.parse(
+          localStorage.getItem("lumaroute.window.full.v1") || "null",
+        );
+        return (
+          saved &&
+          Math.abs(saved.width - 1160) <= 10 &&
+          Math.abs(saved.height - 780) <= 10
+        );
+      }),
     )
-    .not.toBeNull();
+    .toBe(true);
   await page.getByRole("button", { name: "切换到简洁模式" }).click();
+  await expect(page.locator(".simple-shell")).toBeVisible();
+  await delay(500);
   await windowInvoke("set_size", {
     value: { Logical: { width: 980, height: 700 } },
   });
   await expect
     .poll(() =>
-      page.evaluate(() =>
-        JSON.parse(
+      page.evaluate(() => {
+        const saved = JSON.parse(
           localStorage.getItem("lumaroute.window.simple.v1") || "null",
-        ),
-      ),
+        );
+        return (
+          saved &&
+          Math.abs(saved.width - 980) <= 10 &&
+          Math.abs(saved.height - 700) <= 10
+        );
+      }),
     )
-    .not.toBeNull();
+    .toBe(true);
   await page.getByRole("button", { name: "完整模式" }).click();
   await expect
     .poll(async () => {
       const size = await windowInvoke("inner_size");
       const scale = await windowInvoke("scale_factor");
-      return Math.round(size.width / scale);
+      return Math.abs(size.width / scale - 1160) <= 10;
     })
-    .toBe(1160);
+    .toBe(true);
   check(
     "Window position/size memory per mode, DPI conversion and titlebar double-click maximize",
   );
@@ -296,7 +324,7 @@ try {
   expect((await snapshot()).connection.systemProxy).toBe(false);
   await nav("概览").click();
   await expect(
-    page.getByRole("heading", { name: "本地代理已就绪" }),
+    page.getByRole("heading", { name: "已连接并验证" }),
   ).toBeVisible();
   await page.screenshot({
     path: resolve(artifactRoot, "native-connected.png"),
@@ -367,7 +395,13 @@ try {
   check("Subscription fetch and failed-update data protection");
   await nav("日志").click();
   await page.getByRole("button", { name: "运行诊断" }).click();
-  await expect(page.locator(".log-panel")).toContainText("正常");
+  await expect
+    .poll(async () => (await snapshot()).job.running, { timeout: 20000 })
+    .toBe(false);
+  expect((await snapshot()).diagnostics.checks).toHaveLength(7);
+  await expect(page.locator(".diagnostic-report")).toContainText(
+    "核心文件与版本",
+  );
   const diagnostics = await action("exportDiagnostics");
   expect(diagnostics.endsWith(".zip")).toBe(true);
   await page.screenshot({ path: resolve(artifactRoot, "native-logs.png") });

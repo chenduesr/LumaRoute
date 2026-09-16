@@ -148,6 +148,11 @@ export function ProxySettings({
               "先更新订阅，再使用当前选中的节点和已保存的代理模式。",
             )}
             {toggle(
+              "autoRecoverConnection",
+              "连接异常时自动恢复一次",
+              "休眠、网络切换或核心异常后仅重启当前节点；五分钟内最多自动重启一次。",
+            )}
+            {toggle(
               "updateSubscriptionsOnLaunch",
               "启动时更新订阅",
               "依次更新全部订阅；失败时保留上次成功的节点。每次程序启动只执行一次。",

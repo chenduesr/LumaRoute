@@ -14,6 +14,26 @@ use tauri::{
     Emitter, Manager,
 };
 
+fn connection_active(status: &str) -> bool {
+    matches!(
+        status,
+        "starting" | "localReady" | "verifying" | "connected" | "networkUnavailable"
+    )
+}
+
+fn connection_status_label(status: &str) -> &'static str {
+    match status {
+        "starting" => "正在启动核心",
+        "localReady" => "本地代理已就绪",
+        "verifying" => "正在验证网络",
+        "connected" => "已连接并验证",
+        "networkUnavailable" => "网络不可用",
+        "coreCrashed" => "核心异常",
+        "proxyFailed" => "系统代理失败",
+        _ => "未连接",
+    }
+}
+
 #[tauri::command]
 fn runtime_info() -> Value {
     json!({"version":env!("CARGO_PKG_VERSION"),"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH})
@@ -107,7 +127,10 @@ async fn proxy_action(
                 state.cancel();
                 Ok(Value::Null)
             }
-            "diagnostics" => Ok(json!(state.diagnostics()?)),
+            "diagnostics" => {
+                state.start_job("diagnostics", 7, |service| service.diagnostics())?;
+                Ok(Value::Null)
+            }
             "exportDiagnostics" => Ok(json!(state.export_diagnostics()?)),
             "clearLogs" => {
                 state.clear_logs()?;
@@ -238,7 +261,7 @@ pub fn run() {
                     "connect-toggle" => {
                         let s = app.state::<Arc<Service>>().inner().clone();
                         std::thread::spawn(move || {
-                            let result = if s.snapshot().connection.status == "connected" {
+                            let result = if connection_active(&s.snapshot().connection.status) {
                                 s.disconnect()
                             } else {
                                 s.start_job("connect", 1, |service| service.connect(None))
@@ -320,7 +343,8 @@ pub fn run() {
                         }
                     };
                     let _ = status.set_text(format!(
-                        "↑ {}  ↓ {}",
+                        "{} · ↑ {}  ↓ {}",
+                        connection_status_label(&snapshot.connection.status),
                         speed(snapshot.traffic.upload_speed),
                         speed(snapshot.traffic.download_speed)
                     ));
@@ -333,7 +357,7 @@ pub fn run() {
                         "当前节点：{}",
                         active.map(|node| node.name.as_str()).unwrap_or("未选择")
                     ));
-                    let connected = snapshot.connection.status == "connected";
+                    let connected = connection_active(&snapshot.connection.status);
                     let _ = connect.set_text(if connected { "断开连接" } else { "连接" });
                     let _ = connect.set_enabled(
                         active.is_some() || snapshot.data.settings.proxy_mode == "direct",

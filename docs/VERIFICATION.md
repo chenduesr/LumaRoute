@@ -90,7 +90,7 @@ SHA-256 和精确产物信息见 `artifacts-0.2.0.json`。构建日志为项目�
 
 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-installers.ps1`：MSI 数据库以只读方式打开，ProductVersion 为 0.2.0，包含主程序、xray.exe、sing-box.exe、libcronet.dll、geoip.dat、geosite.dat 和两份核心许可证。结果见 `test-artifacts/msi-contents.json`。
 
-本轮没有在当前用户环境执行安装/卸载，因此不把“安装包生成及内容检查通过”表述为“安装/卸载回归通过”。发布包未配置发布者代码签名。Windows 10 独立机器测试仍未进行。
+本轮没有在当前用户环境执行安装/卸载，因此不把“安装包生成及内容检查通过”表述为“安装/卸载回归通过”。Windows 10 独立机器测试仍未进行。
 
 Rust Release 出现一条 MSVC 创建导入库/导出文件的 linker_messages 提示，不影响成功构建；TypeScript 检查及前端生产构建通过。
 

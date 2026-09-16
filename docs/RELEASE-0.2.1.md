@@ -28,7 +28,7 @@ npm run tauri dev
 
 核心已经随源码包提供，setup:cores 校验一致后会跳过下载。构建 Windows 安装包使用 npm run tauri build。
 
-EXE 与 MSI 是两种安装方式，选择其中一种即可。安装包仍未配置代码签名。
+EXE 与 MSI 是两种安装方式，选择其中一种即可。
 
 ## 最终产物检查
 

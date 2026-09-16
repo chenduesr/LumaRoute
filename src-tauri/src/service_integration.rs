@@ -318,11 +318,47 @@ fn real_cores_isolated_protocols_connections_subscriptions_and_cleanup() {
         .children[0]
         .kill()
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(8);
-    while service.snapshot().connection.status != "disconnected" && Instant::now() < deadline {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while {
+        let snapshot = service.snapshot();
+        snapshot.connection.status != "connected"
+            || snapshot.connection.recovery_reason.as_deref() != Some("核心异常退出")
+            || snapshot.job.running
+    } && Instant::now() < deadline
+    {
         thread::sleep(Duration::from_millis(50));
     }
-    assert_eq!(service.snapshot().connection.status, "disconnected");
+    let recovered = service.snapshot();
+    assert_eq!(recovered.connection.status, "connected");
+    assert_eq!(
+        recovered.connection.recovery_reason.as_deref(),
+        Some("核心异常退出")
+    );
+    assert!(recovered.connection.last_verified.is_some());
+    let diagnostic_summary = service.diagnostics().unwrap();
+    assert!(diagnostic_summary.contains("诊断完成"));
+    let diagnostic_report = service.snapshot().diagnostics.unwrap();
+    assert_eq!(diagnostic_report.checks.len(), 7);
+    assert_eq!(
+        diagnostic_report
+            .checks
+            .iter()
+            .find(|check| check.key == "proxyHttp")
+            .unwrap()
+            .status,
+        "ok"
+    );
+    assert_eq!(
+        diagnostic_report
+            .checks
+            .iter()
+            .find(|check| check.key == "exitIp")
+            .unwrap()
+            .status,
+        "skipped"
+    );
+    service.disconnect().unwrap();
+    service.cancel.store(false, Ordering::SeqCst);
 
     let sub_http = HttpFixture::new();
     *sub_http.response.lock().unwrap() = (200, links[0].clone());

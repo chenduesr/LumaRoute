@@ -42,6 +42,8 @@ pub struct Service {
     logs: Mutex<VecDeque<LogEntry>>,
     core: Mutex<CoreInfo>,
     traffic: Mutex<Traffic>,
+    diagnostics: Mutex<Option<DiagnosticReport>>,
+    last_auto_restart: Mutex<Option<Instant>>,
     storage_error: Mutex<Option<String>>,
     pub child_job: windows::ChildJob,
     pub isolated: bool,
@@ -85,6 +87,8 @@ impl Service {
             logs: Mutex::new(VecDeque::new()),
             core: Mutex::new(CoreInfo::default()),
             traffic: Mutex::new(Traffic::default()),
+            diagnostics: Mutex::new(None),
+            last_auto_restart: Mutex::new(None),
             storage_error: Mutex::new(error),
             child_job: windows::ChildJob::new()?,
             isolated,
@@ -142,6 +146,7 @@ impl Service {
         let traffic = self.traffic.lock().unwrap().clone();
         let core = self.core.lock().unwrap().clone();
         let logs = self.logs.lock().unwrap().iter().cloned().collect();
+        let diagnostics = self.diagnostics.lock().unwrap().clone();
         let storage_error = self.storage_error.lock().unwrap().clone();
         Snapshot {
             isolated: self.isolated,
@@ -151,6 +156,7 @@ impl Service {
             traffic,
             core,
             logs,
+            diagnostics,
             storage_error,
         }
     }
@@ -570,9 +576,20 @@ impl Service {
         Ok(format!("订阅更新完成：{succeeded} 个成功，{failed} 个失败"))
     }
     pub fn connect(self: &Arc<Self>, id: Option<String>) -> Result<String, String> {
+        self.connect_internal(id, None)
+    }
+
+    fn connect_internal(
+        self: &Arc<Self>,
+        id: Option<String>,
+        recovery_reason: Option<String>,
+    ) -> Result<String, String> {
         let _op = self.operation.lock().unwrap();
         self.cancelled()?;
         self.stop_inner()?;
+        if recovery_reason.is_none() {
+            *self.last_auto_restart.lock().unwrap() = None;
+        }
         let data = self.data.lock().unwrap().clone();
         let selected = id.or(data.active_node_id.clone());
         let node = if data.settings.proxy_mode == "direct" {
@@ -588,8 +605,9 @@ impl Service {
             return Err("隔离测试模式禁止修改系统代理".into());
         }
         self.runtime.lock().unwrap().connection = Connection {
-            status: "connecting".into(),
+            status: "starting".into(),
             node_id: selected.clone(),
+            recovery_reason: recovery_reason.clone(),
             ..Connection::default()
         };
         let result: Result<(), String> = (|| {
@@ -625,44 +643,158 @@ impl Service {
                 move |l| service.log("INFO", "xray", &l),
             )?;
             self.cancelled()?;
+            {
+                let mut runtime = self.runtime.lock().unwrap();
+                runtime.connection.status = "localReady".into();
+                runtime.connection.since = Some(now());
+                runtime.connection.recovery_reason = recovery_reason.clone();
+            }
             if let Some(id) = selected.as_ref() {
                 self.select(id)?;
             }
             if data.settings.system_proxy {
-                windows::enable(
+                if let Err(error) = windows::enable(
                     &self.root,
                     data.settings.http_port,
                     data.settings.socks_port,
-                )?;
+                ) {
+                    self.runtime.lock().unwrap().connection.status = "proxyFailed".into();
+                    return Err(format!("系统代理应用失败：{error}"));
+                }
             }
-            let mut runtime = self.runtime.lock().unwrap();
-            runtime.processes = Some(set);
-            runtime.connection = Connection {
-                status: "connected".into(),
-                node_id: selected.clone(),
-                since: Some(now()),
-                system_proxy: data.settings.system_proxy,
-                error: None,
-            };
+            {
+                let mut runtime = self.runtime.lock().unwrap();
+                runtime.processes = Some(set);
+                runtime.connection.system_proxy = data.settings.system_proxy;
+                runtime.connection.status = "verifying".into();
+            }
             Ok(())
         })();
         if let Err(e) = result {
             if !self.isolated {
                 let _ = windows::restore(&self.root);
             }
+            let status = if self.runtime.lock().unwrap().connection.status == "proxyFailed" {
+                "proxyFailed"
+            } else {
+                "disconnected"
+            };
             self.runtime.lock().unwrap().connection = Connection {
-                status: "disconnected".into(),
+                status: status.into(),
+                node_id: selected,
                 error: Some(redact(&e)),
+                recovery_reason,
                 ..Connection::default()
             };
             return Err(e);
         }
-        self.log(
-            "INFO",
-            "connection",
-            "核心已启动，本地代理监听就绪；远端连通性请通过 HTTP 测速确认",
-        );
-        Ok("本地代理已启动".into())
+        match self.verify_active_connection(recovery_reason.as_deref()) {
+            Ok(()) => {
+                self.log("INFO", "connection", "本地代理与远端网络验证通过");
+                Ok(if recovery_reason.is_some() {
+                    "当前节点已恢复连接".into()
+                } else {
+                    "连接已建立并验证".into()
+                })
+            }
+            Err(error) => {
+                self.log(
+                    "WARN",
+                    "connection",
+                    &format!("本地代理已启动，但远端验证失败：{error}"),
+                );
+                Ok("本地代理已启动，远端网络暂不可用；将继续检查当前节点".into())
+            }
+        }
+    }
+
+    fn proxy_http_check(&self, settings: &Settings, timeout: Duration) -> Result<(), String> {
+        let client = reqwest::blocking::Client::builder()
+            .no_proxy()
+            .proxy(
+                reqwest::Proxy::all(format!("http://127.0.0.1:{}", settings.http_port))
+                    .map_err(|e| e.to_string())?,
+            )
+            .connect_timeout(timeout)
+            .timeout(timeout)
+            .build()
+            .map_err(|e| e.to_string())?;
+        client
+            .get(&settings.test_url)
+            .send()
+            .map_err(|_| "代理 HTTP 请求失败或超时".to_string())?
+            .error_for_status()
+            .map_err(|e| {
+                format!(
+                    "代理测速地址返回状态 {}",
+                    e.status().map(|status| status.as_u16()).unwrap_or(0)
+                )
+            })?;
+        Ok(())
+    }
+
+    fn verify_active_connection(&self, reason: Option<&str>) -> Result<(), String> {
+        let settings = self.data.lock().unwrap().settings.clone();
+        {
+            let mut runtime = self.runtime.lock().unwrap();
+            if runtime.processes.is_none() {
+                return Err("核心进程未运行".into());
+            }
+            runtime.connection.status = "verifying".into();
+            runtime.connection.recovery_reason = reason.map(str::to_string);
+        }
+        let timeout = Duration::from_secs(settings.test_timeout.min(10).max(3));
+        let proxy_state = if settings.system_proxy && !self.isolated {
+            windows::proxy_matches(settings.http_port, settings.socks_port)
+                .map_err(|error| format!("无法读取 Windows 系统代理：{error}"))
+                .and_then(|matches| {
+                    matches
+                        .then_some(())
+                        .ok_or_else(|| "Windows 系统代理已被修改或未正确启用".to_string())
+                })
+        } else {
+            Ok(())
+        };
+        let proxy_failed = proxy_state.is_err();
+        let result = proxy_state.and_then(|_| self.proxy_http_check(&settings, timeout));
+        if proxy_failed {
+            let _ = self.stop_inner();
+        }
+        let mut runtime = self.runtime.lock().unwrap();
+        if result.is_ok() {
+            runtime.connection.status = "connected".into();
+            runtime.connection.error = None;
+            runtime.connection.last_verified = Some(now());
+            runtime.connection.recovery_reason = reason.map(str::to_string);
+        } else {
+            runtime.connection.status = if proxy_failed {
+                "proxyFailed"
+            } else {
+                "networkUnavailable"
+            }
+            .into();
+            runtime.connection.error = Some(if proxy_failed {
+                format!(
+                    "系统代理状态异常：{}；已停止核心并尝试恢复系统设置",
+                    result
+                        .as_ref()
+                        .err()
+                        .map(String::as_str)
+                        .unwrap_or("未知错误")
+                )
+            } else {
+                format!(
+                    "远端网络验证失败：{}；本地代理仍在运行",
+                    result
+                        .as_ref()
+                        .err()
+                        .map(String::as_str)
+                        .unwrap_or("未知错误")
+                )
+            });
+            runtime.connection.recovery_reason = reason.map(str::to_string);
+        }
+        result
     }
     fn stop_inner(&self) -> Result<(), String> {
         let mut runtime = self.runtime.lock().unwrap();
@@ -1009,39 +1141,283 @@ impl Service {
         ))
     }
     pub fn diagnostics(&self) -> Result<String, String> {
+        let _op = self.operation.lock().unwrap();
+        let started_at = now();
         let data = self.data.lock().unwrap().clone();
-        let mut checks = vec![];
-        for kind in ["xray", "singbox"] {
-            checks.push(
-                json!({"item":format!("{kind} 核心"),"ok":cores::exe(&self.root,kind).exists()}),
-            );
+        {
+            let mut job = self.job.lock().unwrap();
+            job.total = 7;
+            job.completed = 0;
         }
-        let connected = self.runtime.lock().unwrap().processes.is_some();
-        for (name, port) in [
-            ("HTTP", data.settings.http_port),
-            ("SOCKS", data.settings.socks_port),
-        ] {
-            checks.push(json!({"item":format!("{name} 端口 {port}"),"ok":connected||std::net::TcpListener::bind(("127.0.0.1",port)).is_ok()}));
-        }
-        checks.push(json!({"item":"规则数据","ok":self.core.lock().unwrap().geo_ready}));
-        checks.push(json!({"item":"已选择节点","ok":data.active_node_id.is_some()||data.settings.proxy_mode=="direct"}));
-        let failures = checks.iter().filter(|c| c["ok"] == false).count();
-        for c in checks {
+        let mut checks: Vec<DiagnosticCheck> = vec![];
+        let mut add = |check: DiagnosticCheck| {
             self.log(
-                if c["ok"] == true { "INFO" } else { "WARN" },
+                match check.status.as_str() {
+                    "ok" | "skipped" => "INFO",
+                    "warning" => "WARN",
+                    _ => "ERROR",
+                },
                 "diagnostic",
-                &format!(
-                    "{}：{}",
-                    c["item"].as_str().unwrap_or("检查"),
-                    if c["ok"] == true {
-                        "正常"
-                    } else {
-                        "需要检查"
-                    }
-                ),
+                &format!("{}：{}（{}）", check.label, check.status, check.detail),
             );
-        }
-        Ok(format!("诊断完成，{failures} 项需要检查；详见日志"))
+            checks.push(check);
+            let mut job = self.job.lock().unwrap();
+            job.completed = checks.len();
+            job.message = format!("正在诊断 {} / {}", job.completed, job.total);
+        };
+        let core = self.core.lock().unwrap().clone();
+        let cores_ok = core.installed && core.singbox_installed;
+        add(DiagnosticCheck {
+            key: "cores".into(),
+            label: "核心文件与版本".into(),
+            status: if cores_ok { "ok" } else { "failed" }.into(),
+            detail: format!("Xray：{}；sing-box：{}", core.version, core.singbox_version),
+            suggestion: (!cores_ok).then(|| "请在设置 → 更新中重新安装缺失的核心".into()),
+        });
+        let connected = self.runtime.lock().unwrap().processes.is_some();
+        let port_check = |port| {
+            if connected {
+                std::net::TcpStream::connect_timeout(
+                    &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+                    Duration::from_secs(2),
+                )
+                .is_ok()
+            } else {
+                std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+            }
+        };
+        let http_ok = port_check(data.settings.http_port);
+        let socks_ok = port_check(data.settings.socks_port);
+        add(DiagnosticCheck {
+            key: "localPorts".into(),
+            label: "本地代理端口".into(),
+            status: if http_ok && socks_ok { "ok" } else { "failed" }.into(),
+            detail: format!(
+                "HTTP {}：{}；SOCKS {}：{}",
+                data.settings.http_port,
+                if http_ok { "正常" } else { "异常" },
+                data.settings.socks_port,
+                if socks_ok { "正常" } else { "异常" }
+            ),
+            suggestion: (!(http_ok && socks_ok))
+                .then(|| "请检查端口占用，或在设置中更换 HTTP/SOCKS 端口".into()),
+        });
+
+        let selected = data
+            .active_node_id
+            .as_ref()
+            .and_then(|id| data.nodes.iter().find(|node| &node.id == id));
+        let udp_only = selected
+            .map(|node| matches!(node.protocol.as_str(), "tuic" | "hysteria2"))
+            .unwrap_or(false);
+        let tcp_result = if data.settings.proxy_mode == "direct" || udp_only {
+            None
+        } else {
+            selected.map(|node| {
+                use std::net::ToSocketAddrs;
+                (node.address.as_str(), node.port)
+                    .to_socket_addrs()
+                    .map_err(|_| "节点地址无法解析".to_string())?
+                    .any(|address| {
+                        std::net::TcpStream::connect_timeout(&address, Duration::from_secs(5))
+                            .is_ok()
+                    })
+                    .then_some(())
+                    .ok_or_else(|| "节点 TCP 连接失败或超时".to_string())
+            })
+        };
+        add(match tcp_result {
+            None if data.settings.proxy_mode == "direct" => DiagnosticCheck {
+                key: "nodeTcp".into(),
+                label: "节点 TCP 可达性".into(),
+                status: "skipped".into(),
+                detail: "直连模式无需检查节点".into(),
+                suggestion: None,
+            },
+            None if udp_only => DiagnosticCheck {
+                key: "nodeTcp".into(),
+                label: "节点 TCP 可达性".into(),
+                status: "skipped".into(),
+                detail: "当前节点使用 UDP 传输，由代理 HTTP 请求继续验证".into(),
+                suggestion: None,
+            },
+            None => DiagnosticCheck {
+                key: "nodeTcp".into(),
+                label: "节点 TCP 可达性".into(),
+                status: "failed".into(),
+                detail: "尚未选择节点".into(),
+                suggestion: Some("请先选择一个节点".into()),
+            },
+            Some(Ok(())) => DiagnosticCheck {
+                key: "nodeTcp".into(),
+                label: "节点 TCP 可达性".into(),
+                status: "ok".into(),
+                detail: "节点地址和端口可以建立 TCP 连接".into(),
+                suggestion: None,
+            },
+            Some(Err(error)) => DiagnosticCheck {
+                key: "nodeTcp".into(),
+                label: "节点 TCP 可达性".into(),
+                status: "failed".into(),
+                detail: error,
+                suggestion: Some("请检查本机网络、节点地址、端口或服务器状态".into()),
+            },
+        });
+
+        let proxy_result = if connected {
+            self.proxy_http_check(
+                &data.settings,
+                Duration::from_secs(data.settings.test_timeout.min(10).max(3)),
+            )
+        } else {
+            Err("当前未连接，无法通过本地代理发起请求".into())
+        };
+        add(DiagnosticCheck {
+            key: "proxyHttp".into(),
+            label: "代理 HTTP 请求".into(),
+            status: if proxy_result.is_ok() { "ok" } else { "failed" }.into(),
+            detail: proxy_result
+                .as_ref()
+                .map(|_| format!("{} 请求成功", data.settings.test_url))
+                .unwrap_or_else(|error| error.clone()),
+            suggestion: proxy_result
+                .is_err()
+                .then(|| "请先连接，再检查节点协议、TLS 指纹和测速地址".into()),
+        });
+
+        use std::net::ToSocketAddrs;
+        let dns_host = url::Url::parse(&data.settings.test_url)
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_string));
+        let dns_ok = dns_host
+            .as_ref()
+            .map(|host| (host.as_str(), 443).to_socket_addrs().is_ok())
+            .unwrap_or(false);
+        add(DiagnosticCheck {
+            key: "dns".into(),
+            label: "DNS 解析".into(),
+            status: if dns_ok { "ok" } else { "failed" }.into(),
+            detail: if dns_ok {
+                format!("{} 可以解析", dns_host.unwrap_or_default())
+            } else {
+                "测速地址域名解析失败".into()
+            },
+            suggestion: (!dns_ok).then(|| "请检查 Windows DNS 或自定义 DNS 配置".into()),
+        });
+
+        let proxy_state = if !data.settings.system_proxy {
+            None
+        } else if connected {
+            Some(windows::proxy_matches(
+                data.settings.http_port,
+                data.settings.socks_port,
+            ))
+        } else {
+            Some(Ok(false))
+        };
+        add(match proxy_state {
+            None => DiagnosticCheck {
+                key: "systemProxy".into(),
+                label: "Windows 系统代理".into(),
+                status: "skipped".into(),
+                detail: "设置中未启用系统代理接管".into(),
+                suggestion: None,
+            },
+            Some(Ok(true)) => DiagnosticCheck {
+                key: "systemProxy".into(),
+                label: "Windows 系统代理".into(),
+                status: "ok".into(),
+                detail: "系统代理与 LumaRoute 当前端口一致".into(),
+                suggestion: None,
+            },
+            Some(Ok(false)) => DiagnosticCheck {
+                key: "systemProxy".into(),
+                label: "Windows 系统代理".into(),
+                status: "failed".into(),
+                detail: "系统代理未启用或已被其他程序修改".into(),
+                suggestion: Some("请断开后重新连接，并关闭可能修改系统代理的软件".into()),
+            },
+            Some(Err(error)) => DiagnosticCheck {
+                key: "systemProxy".into(),
+                label: "Windows 系统代理".into(),
+                status: "failed".into(),
+                detail: redact(&error),
+                suggestion: Some("请检查当前用户的系统代理设置权限".into()),
+            },
+        });
+
+        let read_ip = |proxy: Option<u16>| -> Result<String, String> {
+            let mut builder = reqwest::blocking::Client::builder()
+                .no_proxy()
+                .connect_timeout(Duration::from_secs(6))
+                .timeout(Duration::from_secs(8));
+            if let Some(port) = proxy {
+                builder = builder.proxy(
+                    reqwest::Proxy::all(format!("http://127.0.0.1:{port}"))
+                        .map_err(|e| e.to_string())?,
+                );
+            }
+            builder
+                .build()
+                .map_err(|e| e.to_string())?
+                .get("https://api.ipify.org")
+                .send()
+                .map_err(|_| "出口 IP 服务不可达".to_string())?
+                .error_for_status()
+                .map_err(|_| "出口 IP 服务返回错误".to_string())?
+                .text()
+                .map(|value| value.trim().to_string())
+                .map_err(|_| "出口 IP 响应无效".to_string())
+        };
+        let exit_check = if self.isolated {
+            ("skipped", "隔离测试模式不访问公网出口服务", None)
+        } else if connected && data.settings.proxy_mode != "direct" {
+            match (read_ip(None), read_ip(Some(data.settings.http_port))) {
+                (Ok(direct), Ok(proxied)) if direct != proxied => {
+                    ("ok", "直连与代理出口 IP 不同", None)
+                }
+                (Ok(_), Ok(_)) => (
+                    "warning",
+                    "直连与代理出口 IP 相同",
+                    Some("节点可能未改变出口，或上游网络使用了相同出口".into()),
+                ),
+                _ => (
+                    "warning",
+                    "无法同时取得直连和代理出口 IP",
+                    Some("出口查询服务可能被网络拦截；不影响其他诊断结果".into()),
+                ),
+            }
+        } else {
+            ("skipped", "需要处于代理连接状态", None)
+        };
+        add(DiagnosticCheck {
+            key: "exitIp".into(),
+            label: "实际出口 IP".into(),
+            status: exit_check.0.into(),
+            detail: exit_check.1.into(),
+            suggestion: exit_check.2,
+        });
+
+        let failures = checks
+            .iter()
+            .filter(|check| check.status == "failed")
+            .count();
+        let warnings = checks
+            .iter()
+            .filter(|check| check.status == "warning")
+            .count();
+        let summary = if failures == 0 && warnings == 0 {
+            "诊断完成，所有已执行项目正常".to_string()
+        } else {
+            format!("诊断完成：{failures} 项失败，{warnings} 项提醒")
+        };
+        *self.diagnostics.lock().unwrap() = Some(DiagnosticReport {
+            started_at,
+            completed_at: now(),
+            checks,
+            summary: summary.clone(),
+        });
+        Ok(summary)
     }
     pub fn export_diagnostics(&self) -> Result<String, String> {
         let data = self.data.lock().unwrap().clone();
@@ -1077,10 +1453,16 @@ impl Service {
         let s = self.clone();
         thread::spawn(move || {
             let mut networks = sysinfo::Networks::new_with_refreshed_list();
-            let mut previous = Instant::now();
+            let mut network_signature = active_network_signature(&networks);
+            let mut previous_tick = Instant::now();
+            let mut last_health_check = Instant::now();
+            let mut failed_health_checks = 0u8;
+            let mut pending_restart: Option<String> = None;
             let mut save_ticks = 0;
             while !s.exit.load(Ordering::SeqCst) {
                 thread::sleep(Duration::from_secs(1));
+                let tick_gap = previous_tick.elapsed();
+                previous_tick = Instant::now();
                 let crashed = {
                     let mut r = s.runtime.lock().unwrap();
                     r.processes
@@ -1095,17 +1477,30 @@ impl Service {
                 if crashed {
                     let _op = s.operation.lock().unwrap();
                     let _ = s.stop_inner();
-                    s.runtime.lock().unwrap().connection.error =
-                        Some("核心异常退出，已停止代理并尝试恢复系统设置".into());
+                    {
+                        let mut runtime = s.runtime.lock().unwrap();
+                        runtime.connection.status = "coreCrashed".into();
+                        runtime.connection.error =
+                            Some("核心异常退出，已停止代理并恢复系统设置".into());
+                        runtime.connection.recovery_reason = Some("核心异常退出".into());
+                    }
                     s.log(
                         "ERROR",
                         "connection",
                         "核心异常退出，已执行清理与系统代理恢复",
                     );
+                    if s.data.lock().unwrap().settings.auto_recover_connection {
+                        pending_restart = Some("核心异常退出".into());
+                    }
                 }
                 networks.refresh(true);
-                let elapsed = previous.elapsed().as_secs_f64().max(0.01);
-                previous = Instant::now();
+                let next_signature = active_network_signature(&networks);
+                let network_changed = !network_signature.is_empty()
+                    && !next_signature.is_empty()
+                    && network_signature != next_signature;
+                network_signature = next_signature;
+                let resumed = tick_gap > Duration::from_secs(5);
+                let elapsed = tick_gap.as_secs_f64().clamp(0.01, 5.0);
                 let (upload, download) = networks
                     .iter()
                     .filter(|(name, _)| !name.to_lowercase().contains("loopback"))
@@ -1148,6 +1543,98 @@ impl Service {
                         save_ticks = 0;
                     }
                 }
+                let status = s.runtime.lock().unwrap().connection.status.clone();
+                let active = s.runtime.lock().unwrap().processes.is_some();
+                let health_due = last_health_check.elapsed()
+                    >= if status == "networkUnavailable" {
+                        Duration::from_secs(10)
+                    } else {
+                        Duration::from_secs(30)
+                    };
+                let recovery_reason = if resumed {
+                    Some("电脑从休眠中恢复")
+                } else if network_changed {
+                    Some("网络接口发生变化")
+                } else if health_due {
+                    Some("定期连接检查")
+                } else {
+                    None
+                };
+                if active && !s.job.lock().unwrap().running {
+                    if let Some(reason) = recovery_reason {
+                        if let Ok(_operation) = s.operation.try_lock() {
+                            last_health_check = Instant::now();
+                            match s.verify_active_connection(Some(reason)) {
+                                Ok(()) => {
+                                    if resumed || network_changed || failed_health_checks > 0 {
+                                        s.log(
+                                            "INFO",
+                                            "recovery",
+                                            &format!("{reason}后，当前节点连接验证通过"),
+                                        );
+                                    }
+                                    failed_health_checks = 0;
+                                }
+                                Err(error) => {
+                                    failed_health_checks = failed_health_checks.saturating_add(1);
+                                    s.log(
+                                        "WARN",
+                                        "recovery",
+                                        &format!("{reason}后连接验证失败：{error}"),
+                                    );
+                                    if failed_health_checks >= 2
+                                        && s.data.lock().unwrap().settings.auto_recover_connection
+                                    {
+                                        pending_restart = Some(reason.into());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if let Some(reason) = pending_restart.clone() {
+                    if s.job.lock().unwrap().running {
+                        continue;
+                    }
+                    let can_restart = {
+                        let mut last = s.last_auto_restart.lock().unwrap();
+                        let allowed = last
+                            .map(|time| time.elapsed() >= Duration::from_secs(300))
+                            .unwrap_or(true);
+                        if allowed {
+                            *last = Some(Instant::now());
+                        }
+                        allowed
+                    };
+                    if can_restart {
+                        pending_restart = None;
+                        failed_health_checks = 0;
+                        let selected = s
+                            .runtime
+                            .lock()
+                            .unwrap()
+                            .connection
+                            .node_id
+                            .clone()
+                            .or_else(|| s.data.lock().unwrap().active_node_id.clone());
+                        s.log(
+                            "WARN",
+                            "recovery",
+                            &format!("{reason}，将自动重启一次当前节点"),
+                        );
+                        let reason_for_job = reason.clone();
+                        let _ = s.start_job("recovery", 1, move |service| {
+                            service.connect_internal(selected, Some(reason_for_job))
+                        });
+                    } else if !can_restart {
+                        pending_restart = None;
+                        s.log(
+                            "WARN",
+                            "recovery",
+                            "五分钟内已经自动重启过一次，不再重复重启；可手动断开后重连",
+                        );
+                    }
+                }
                 if !s.job.lock().unwrap().running {
                     let due = s
                         .data
@@ -1167,6 +1654,23 @@ impl Service {
         });
     }
 }
+
+fn active_network_signature(networks: &sysinfo::Networks) -> String {
+    let mut entries = networks
+        .iter()
+        .filter(|(name, _)| !name.to_lowercase().contains("loopback"))
+        .flat_map(|(name, network)| {
+            network
+                .ip_networks()
+                .iter()
+                .filter(|network| !network.addr.is_loopback() && !network.addr.is_unspecified())
+                .map(move |network| format!("{name}:{network}"))
+        })
+        .collect::<Vec<_>>();
+    entries.sort();
+    entries.join("|")
+}
+
 fn subscription_due(s: &Subscription, now: chrono::DateTime<chrono::Utc>) -> bool {
     if s.interval_hours == 0 || s.interval_hours > 720 {
         return false;

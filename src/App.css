@@ -1361,6 +1361,19 @@ select:focus-visible {
   gap: 24px;
   box-shadow: var(--shadow-card);
 }
+.connection-card.is-connected {
+  border-color: #54b98b66;
+}
+.connection-card.has-problem,
+.simple-connection.has-problem {
+  border-color: #db8d526e;
+}
+.connection-card.has-problem .connection-icon,
+.simple-connection.has-problem .simple-state-icon {
+  color: #c56d2d;
+  background: #db8d5216;
+  border-color: #db8d5242;
+}
 .connection-main {
   display: flex;
   align-items: center;
@@ -1508,6 +1521,65 @@ select:focus-visible {
   align-items: center;
   gap: 12px;
   margin-bottom: 16px;
+}
+.diagnostic-report {
+  margin-bottom: 18px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow-card);
+}
+.diagnostic-summary {
+  margin-bottom: 14px;
+}
+.diagnostic-summary > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.diagnostic-summary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.diagnostic-checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+.diagnostic-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+}
+.diagnostic-check > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--muted);
+}
+.diagnostic-check.ok > svg {
+  color: #3ca879;
+}
+.diagnostic-check.warning > svg {
+  color: #c56d2d;
+}
+.diagnostic-check.failed > svg {
+  color: #d94b58;
+}
+.diagnostic-check p,
+.diagnostic-check small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.diagnostic-check small {
+  color: #b7672f;
 }
 .nodes-toolbar .search-field {
   flex: 1;

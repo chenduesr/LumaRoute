@@ -12,7 +12,12 @@ import {
   Sun,
   X,
 } from "lucide-react";
-import { coreName, type Snapshot } from "../lib/proxy";
+import {
+  connectionActive,
+  connectionStatusText,
+  coreName,
+  type Snapshot,
+} from "../lib/proxy";
 import type { Run } from "../components/ProxyDialogs";
 import type { Settings } from "../lib/types";
 import mark from "../assets/mark.svg";
@@ -44,7 +49,7 @@ export function SimpleMode({
   const connection = snapshot?.connection;
   const job = snapshot?.job;
   const connected = connection?.status === "connected";
-  const connecting = connection?.status === "connecting";
+  const active = connectionActive(connection?.status);
   const node = data?.nodes.find(
     (item) => item.id === (connection?.nodeId ?? data.activeNodeId),
   );
@@ -118,9 +123,12 @@ export function SimpleMode({
       </header>
 
       <main className="simple-main">
-        {(error || snapshot?.storageError) && (
+        {(error || snapshot?.storageError || connection?.error) && (
           <div className="error-banner" role="alert">
-            {error || `配置读取失败：${snapshot?.storageError}`}
+            {error ||
+              (snapshot?.storageError
+                ? `配置读取失败：${snapshot.storageError}`
+                : connection?.error)}
             {error && (
               <button aria-label="关闭错误提示" onClick={onClearError}>
                 <X size={16} />
@@ -130,7 +138,13 @@ export function SimpleMode({
         )}
 
         <section
-          className={`simple-connection ${connected ? "is-connected" : ""}`}
+          className={`simple-connection ${connected ? "is-connected" : ""} ${
+            connection?.status === "networkUnavailable" ||
+            connection?.status === "coreCrashed" ||
+            connection?.status === "proxyFailed"
+              ? "has-problem"
+              : ""
+          }`}
         >
           <div className="simple-state">
             <span className={`simple-state-icon ${connected ? "on" : ""}`}>
@@ -141,11 +155,7 @@ export function SimpleMode({
               <h1>
                 {!snapshot
                   ? "正在准备…"
-                  : connecting
-                    ? "正在连接…"
-                    : connected
-                      ? "已连接"
-                      : "未连接"}
+                  : connectionStatusText(connection?.status)}
               </h1>
               <p>
                 {node?.name ??
@@ -157,14 +167,14 @@ export function SimpleMode({
           </div>
 
           <button
-            className={`simple-power ${connected ? "on" : ""}`}
-            aria-label={connected || connecting ? "断开连接" : "启动连接"}
+            className={`simple-power ${active ? "on" : ""}`}
+            aria-label={active ? "断开连接" : "启动连接"}
             disabled={!snapshot || unavailable}
             onClick={() =>
               void run(
-                connected || connecting ? "disconnect" : "connect",
+                active ? "disconnect" : "connect",
                 {},
-                connected ? "已断开" : "",
+                active ? "已断开" : "",
               )
             }
           >
@@ -178,7 +188,7 @@ export function SimpleMode({
                 <select
                   aria-label="当前节点"
                   value={data.activeNodeId ?? ""}
-                  disabled={unavailable || connected || connecting}
+                  disabled={unavailable || active}
                   onChange={(event) =>
                     void run("select", { id: event.target.value }, "已切换节点")
                   }
@@ -224,7 +234,8 @@ export function SimpleMode({
             <button onClick={() => void run("cancel")}>取消</button>
           </div>
         ) : (
-          job?.message && (
+          job?.message &&
+          !["startup", "updateCheck"].includes(job.kind) && (
             <div className="job-result" role="status">
               {job.message}
             </div>

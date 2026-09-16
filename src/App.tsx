@@ -28,7 +28,11 @@ import { useTheme } from "./hooks/useTheme";
 import { useProxy } from "./hooks/useProxy";
 import { useWindowState } from "./hooks/useWindowState";
 import { defaultSettings, isSettings } from "./lib/storage";
-import type { ProxyNode, Subscription } from "./lib/proxy";
+import {
+  connectionStatusText,
+  type ProxyNode,
+  type Subscription,
+} from "./lib/proxy";
 import { ProxyOverview } from "./pages/ProxyOverview";
 import { Nodes } from "./pages/Nodes";
 import { Subscriptions } from "./pages/Subscriptions";
@@ -157,9 +161,7 @@ export default function App() {
                     <span
                       className={`status-dot ${snapshot?.connection.status === "connected" ? "" : "offline"}`}
                     />
-                    {snapshot?.connection.status === "connected"
-                      ? "已连接"
-                      : "未连接"}
+                    {connectionStatusText(snapshot?.connection.status)}
                     <span>v0.3.1</span>
                   </div>
                 </div>

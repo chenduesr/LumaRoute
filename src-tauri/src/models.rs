@@ -11,6 +11,7 @@ pub struct Settings {
     pub bypass_mainland: bool,
     pub start_on_boot: bool,
     pub auto_connect: bool,
+    pub auto_recover_connection: bool,
     pub update_subscriptions_on_launch: bool,
     pub minimize_to_tray: bool,
     pub direct_domains: String,
@@ -45,6 +46,7 @@ impl Default for Settings {
             bypass_mainland: true,
             start_on_boot: false,
             auto_connect: false,
+            auto_recover_connection: true,
             update_subscriptions_on_launch: true,
             minimize_to_tray: true,
             direct_domains: String::new(),
@@ -173,6 +175,27 @@ pub struct Connection {
     pub since: Option<String>,
     pub system_proxy: bool,
     pub error: Option<String>,
+    pub last_verified: Option<String>,
+    pub recovery_reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticCheck {
+    pub key: String,
+    pub label: String,
+    pub status: String,
+    pub detail: String,
+    pub suggestion: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticReport {
+    pub started_at: String,
+    pub completed_at: String,
+    pub checks: Vec<DiagnosticCheck>,
+    pub summary: String,
 }
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -201,6 +224,7 @@ pub struct Snapshot {
     pub traffic: Traffic,
     pub core: CoreInfo,
     pub logs: Vec<LogEntry>,
+    pub diagnostics: Option<DiagnosticReport>,
     pub storage_error: Option<String>,
 }
 pub fn now() -> String {

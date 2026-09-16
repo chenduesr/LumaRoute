@@ -1,6 +1,6 @@
 # LumaRoute · Windows 双核心代理客户端
 
-使用 **Tauri 2 + React + TypeScript + Vite + Tailwind CSS + Radix UI**；业务逻辑由 Rust 实现。当前版本 **0.3.1**。
+使用 **Tauri 2 + React + TypeScript + Vite + Tailwind CSS + Radix UI**；业务逻辑由 Rust 实现。当前版本 **0.3.2**。
 
 LumaRoute 使用独立应用标识和数据目录，配置、订阅与节点均从空白状态开始。
 
@@ -8,10 +8,10 @@ LumaRoute 使用独立应用标识和数据目录，配置、订阅与节点均�
 
 ## 下载与版本关系
 
-- [下载 LumaRoute 0.3.1](https://github.com/chenduesr/LumaRoute/releases/tag/v0.3.1)：提供 EXE、MSI、源码包与 SHA-256 校验文件。
+- [下载 LumaRoute 0.3.2](https://github.com/chenduesr/LumaRoute/releases/tag/v0.3.2)：提供 EXE、MSI、源码包与 SHA-256 校验文件。
 - 应用更新源填写 `chenduesr/LumaRoute`。检查功能查询正式 Release；预发布版本通过发布页面手动下载。
 
-发布包尚未配置代码签名。完整功能和验证边界见下文及 [迁移说明](docs/MIGRATION.md)。
+完整功能和验证边界见下文及 [迁移说明](docs/MIGRATION.md)。
 
 ## 开发与构建
 
@@ -51,6 +51,8 @@ npm run tauri build # Windows x64 EXE 安装包和 MSI
 - 快速添加订阅：打开时读取一次剪贴板中的 HTTP/HTTPS 链接，自动生成名称并预览域名；也可从本地二维码图片识别。重复地址会明确提示。
 - 完整模式与简洁模式分别记忆窗口位置、逻辑尺寸和最大化状态；自绘标题栏支持双击最大化，尺寸按 Windows DPI 缩放比例换算。
 - 启动时可依次更新全部订阅；失败时保留旧节点，并在更新结束后执行自动连接。
+- 连接状态区分核心启动、本地端口就绪、远端验证、网络不可用、核心异常和系统代理失败；休眠恢复、网络接口变化及定期检查会重新验证当前节点。可选的自动恢复仅重启当前节点，五分钟内最多一次。
+- 一键连接诊断检查双核心、HTTP/SOCKS 端口、节点 TCP、代理 HTTP、DNS、Windows 系统代理和实际出口 IP，并针对失败项目给出处理建议。
 
 Xray 已移除 `allowInsecure`：自签名 TLS 节点可在详情填写服务器证书 **SHA-256 指纹**（64 位十六进制，可含冒号）。不会自动把未知证书当作可信证书。
 
@@ -58,10 +60,10 @@ Xray 已移除 `allowInsecure`：自签名 TLS 节点可在详情填写服务器
 
 ## 安装包
 
-- `src-tauri/target/release/bundle/nsis/LumaRoute_0.3.1_x64-setup.exe`
-- `src-tauri/target/release/bundle/msi/LumaRoute_0.3.1_x64_zh-CN.msi`
+- `src-tauri/target/release/bundle/nsis/LumaRoute_0.3.2_x64-setup.exe`
+- `src-tauri/target/release/bundle/msi/LumaRoute_0.3.2_x64_zh-CN.msi`
 
-EXE 安装器面向当前用户，提供简体中文/英文；MSI 为简体中文。缺少 WebView2 时安装器联网下载。发布包尚未配置代码签名。直接运行 release 应用时需同时保留旁边的 `cores/` 资源目录，不能只复制单个主程序。
+EXE 安装器面向当前用户，提供简体中文/英文；MSI 为简体中文。缺少 WebView2 时安装器联网下载。直接运行 release 应用时需同时保留旁边的 `cores/` 资源目录，不能只复制单个主程序。
 
 ## 数据与结构
 
@@ -112,6 +114,10 @@ LumaRoute 采用“光线沿路径抵达”的 L 形路线标志；首次启动�
 ## 0.3.1 界面细节优化
 
 提高完整模式与简洁模式的文字、按钮和输入控件可读性，强化卡片层级、连接状态和深浅主题反馈，并修复日志来源换行。完整说明见 [0.3.1 发布说明](docs/RELEASE-0.3.1.md)。
+
+## 0.3.2 连接稳定性与诊断
+
+增加休眠恢复、网络变化和核心异常后的当前节点恢复，细化连接状态，并将一键诊断扩展为核心、端口、节点、代理、DNS、系统代理和出口 IP 七项检查。完整说明见 [0.3.2 发布说明](docs/RELEASE-0.3.2.md)。
 
 ## 许可证
 

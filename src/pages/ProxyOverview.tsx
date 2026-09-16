@@ -9,7 +9,14 @@ import {
   Download,
   Network,
 } from "lucide-react";
-import { bytes, coreName, type Snapshot } from "../lib/proxy";
+import {
+  bytes,
+  connectionActive,
+  connectionStatusText,
+  coreName,
+  dateText,
+  type Snapshot,
+} from "../lib/proxy";
 import type { Run } from "../components/ProxyDialogs";
 export function ProxyOverview({
   snapshot,
@@ -29,7 +36,7 @@ export function ProxyOverview({
     (n) => n.id === (connection.nodeId ?? data.activeNodeId),
   );
   const connected = connection.status === "connected";
-  const connecting = connection.status === "connecting";
+  const active = connectionActive(connection.status);
   const seconds = connection.since
     ? Math.max(
         0,
@@ -58,20 +65,22 @@ export function ProxyOverview({
               : "直连模式"}
         </span>
       </div>
-      <section className={`connection-card ${connected ? "is-connected" : ""}`}>
+      <section
+        className={`connection-card ${connected ? "is-connected" : ""} ${
+          connection.status === "networkUnavailable" ||
+          connection.status === "coreCrashed" ||
+          connection.status === "proxyFailed"
+            ? "has-problem"
+            : ""
+        }`}
+      >
         <div className="connection-main">
           <div className="connection-icon">
             <Globe2 size={34} />
           </div>
           <div>
             <span className="eyebrow">CONNECTION</span>
-            <h2>
-              {connecting
-                ? "正在启动…"
-                : connected
-                  ? "本地代理已就绪"
-                  : "尚未连接"}
-            </h2>
+            <h2>{connectionStatusText(connection.status)}</h2>
             <p>
               {node?.name ??
                 (data.settings.proxyMode === "direct"
@@ -81,14 +90,14 @@ export function ProxyOverview({
           </div>
         </div>
         <button
-          className={`power-button ${connected ? "on" : ""}`}
-          aria-label={connected || connecting ? "断开连接" : "启动连接"}
-          disabled={busy || (!connected && !connecting && job.running)}
+          className={`power-button ${active ? "on" : ""}`}
+          aria-label={active ? "断开连接" : "启动连接"}
+          disabled={busy || (!active && job.running)}
           onClick={() =>
             void run(
-              connected || connecting ? "disconnect" : "connect",
+              active ? "disconnect" : "connect",
               {},
-              connected ? "已断开" : "",
+              active ? "已断开" : "",
             )
           }
         >
@@ -107,7 +116,11 @@ export function ProxyOverview({
         </div>
       </section>
       <p className="connection-note">
-        “已就绪”表示本地端口已启动；远端是否可用请通过节点 HTTP 测速确认。
+        {connection.lastVerified
+          ? `最近验证：${dateText(connection.lastVerified)}${
+              connection.recoveryReason ? ` · ${connection.recoveryReason}` : ""
+            }`
+          : "连接时会依次检查核心、本地端口、系统代理和远端网络。"}
       </p>
       {connection.error && (
         <div className="error-banner" role="alert">
