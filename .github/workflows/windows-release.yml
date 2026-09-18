@@ -1,0 +1,112 @@
+name: Windows build and release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Restore Rust cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: windows-rust-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: windows-rust-
+
+      - name: Install dependencies and browser
+        run: |
+          npm ci
+          npx playwright install chromium
+
+      - name: Prepare verified proxy cores
+        shell: pwsh
+        run: npm run setup:cores
+
+      - name: Validate version tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $version = (Get-Content -Raw -LiteralPath package.json | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Tag $env:GITHUB_REF_NAME does not match package version $version"
+          }
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib -- --test-threads=1
+
+      - name: Run browser UI tests
+        run: npm run test:ui
+
+      - name: Build Windows installers
+        run: npm run tauri build
+
+      - name: Verify and collect release files
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-installers.ps1
+          $version = (Get-Content -Raw -LiteralPath package.json | ConvertFrom-Json).version
+          $releaseDir = Join-Path $env:RUNNER_TEMP "lumaroute-$version"
+          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-source.ps1 -OutputDirectory $releaseDir
+          Copy-Item -LiteralPath "src-tauri/target/release/bundle/nsis/LumaRoute_${version}_x64-setup.exe" -Destination $releaseDir
+          Copy-Item -LiteralPath "src-tauri/target/release/bundle/msi/LumaRoute_${version}_x64_zh-CN.msi" -Destination $releaseDir
+          $files = Get-ChildItem -LiteralPath $releaseDir -File | Where-Object { $_.Extension -in '.exe', '.msi', '.zip' } | Sort-Object Name
+          $sums = foreach ($file in $files) {
+            $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash *$($file.Name)"
+          }
+          Set-Content -LiteralPath (Join-Path $releaseDir 'SHA256SUMS.txt') -Value $sums -Encoding utf8
+          "RELEASE_DIR=$releaseDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LumaRoute-${{ env.VERSION }}-windows-x64
+          path: ${{ env.RELEASE_DIR }}/*
+          if-no-files-found: error
+
+      - name: Publish GitHub Release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = "docs/RELEASE-$env:VERSION.md"
+          $assets = (Get-ChildItem -LiteralPath $env:RELEASE_DIR -File).FullName
+          if (gh release view $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY 2>$null) {
+            gh release upload $env:GITHUB_REF_NAME $assets --repo $env:GITHUB_REPOSITORY --clobber
+          } elseif (Test-Path -LiteralPath $notes) {
+            gh release create $env:GITHUB_REF_NAME $assets --repo $env:GITHUB_REPOSITORY --title "LumaRoute $env:VERSION" --notes-file $notes --verify-tag
+          } else {
+            gh release create $env:GITHUB_REF_NAME $assets --repo $env:GITHUB_REPOSITORY --title "LumaRoute $env:VERSION" --generate-notes --verify-tag
+          }

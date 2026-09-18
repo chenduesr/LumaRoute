@@ -119,7 +119,8 @@ export function Nodes({
               : "从你的第一个节点开始"}
           </h2>
           <p>
-            支持分享链接、Base64 以及 Clash YAML。AnyTLS/TUIC 使用 sing-box。
+            支持分享链接、Base64、Clash Meta YAML 和 sing-box JSON。AnyTLS/TUIC
+            使用 sing-box。
           </p>
         </div>
       ) : (

@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
-import { proxyAction, readSnapshot, type Snapshot } from "../lib/proxy";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import {
+  proxyAction,
+  readSnapshot,
+  type ProxyLog,
+  type Snapshot,
+} from "../lib/proxy";
 export function useProxy() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [error, setError] = useState("");
@@ -15,16 +21,55 @@ export function useProxy() {
     }
   }, []);
   useEffect(() => {
+    if (!isTauri()) return;
     let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const poll = async () => {
-      await refresh();
-      if (!stopped) timer = setTimeout(poll, 1000);
+    const unlisteners: UnlistenFn[] = [];
+    const setupEvents = async () => {
+      const snapshotUnlisten = await listen<Snapshot>(
+        "proxy-snapshot",
+        ({ payload }) => {
+          if (!stopped) setSnapshot(payload);
+        },
+      );
+      if (stopped) snapshotUnlisten();
+      else unlisteners.push(snapshotUnlisten);
+      const logUnlisten = await listen<ProxyLog>("proxy-log", ({ payload }) => {
+        if (stopped) return;
+        setSnapshot((current) => {
+          if (!current) return current;
+          const latest = current.logs[current.logs.length - 1];
+          if (
+            latest?.timestamp === payload.timestamp &&
+            latest.level === payload.level &&
+            latest.source === payload.source &&
+            latest.message === payload.message
+          )
+            return current;
+          return {
+            ...current,
+            logs: [...current.logs, payload].slice(-1000),
+          };
+        });
+      });
+      if (stopped) logUnlisten();
+      else unlisteners.push(logUnlisten);
     };
-    void poll();
+    const syncWhenVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    void refresh();
+    void setupEvents().catch(() => {
+      // The low-frequency refresh below remains available if event setup fails.
+    });
+    const fallback = setInterval(() => void refresh(), 30_000);
+    window.addEventListener("focus", syncWhenVisible);
+    document.addEventListener("visibilitychange", syncWhenVisible);
     return () => {
       stopped = true;
-      clearTimeout(timer);
+      clearInterval(fallback);
+      window.removeEventListener("focus", syncWhenVisible);
+      document.removeEventListener("visibilitychange", syncWhenVisible);
+      for (const unlisten of unlisteners) unlisten();
     };
   }, [refresh]);
   useEffect(() => {

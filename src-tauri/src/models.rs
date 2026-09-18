@@ -121,6 +121,11 @@ pub struct Subscription {
     pub last_updated: Option<String>,
     pub last_attempt: Option<String>,
     pub error: Option<String>,
+    pub format: String,
+    pub upload_bytes: Option<u64>,
+    pub download_bytes: Option<u64>,
+    pub total_bytes: Option<u64>,
+    pub expires_at: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -217,6 +222,7 @@ pub struct CoreInfo {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
+    pub version: String,
     pub isolated: bool,
     pub data: Data,
     pub connection: Connection,

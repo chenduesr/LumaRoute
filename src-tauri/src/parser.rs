@@ -8,6 +8,13 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use url::Url;
 
+#[derive(Debug)]
+pub struct ParsedNodes {
+    pub nodes: Vec<Node>,
+    pub rejected: usize,
+    pub format: String,
+}
+
 fn decode(s: &str) -> String {
     percent_decode_str(s).decode_utf8_lossy().into_owned()
 }
@@ -31,6 +38,11 @@ fn truth(s: &str) -> bool {
 }
 
 pub fn parse(payload: &str) -> Result<(Vec<Node>, usize), String> {
+    let parsed = parse_detailed(payload)?;
+    Ok((parsed.nodes, parsed.rejected))
+}
+
+pub fn parse_detailed(payload: &str) -> Result<ParsedNodes, String> {
     if payload.len() > 8 * 1024 * 1024 {
         return Err("订阅内容超过 8 MiB 限制".into());
     }
@@ -42,18 +54,39 @@ pub fn parse(payload: &str) -> Result<(Vec<Node>, usize), String> {
     };
     let mut nodes = vec![];
     let mut rejected = 0;
-    if let Ok(v) = serde_yaml::from_str::<Value>(&decoded) {
-        if let Some(entries) = v.get("proxies").and_then(Value::as_array) {
+    let mut format = if decoded != text {
+        "Base64 分享链接"
+    } else {
+        "分享链接"
+    };
+    if let Ok(v) = serde_json::from_str::<Value>(&decoded) {
+        if let Some(entries) = v.get("outbounds").and_then(Value::as_array) {
+            format = "sing-box JSON";
             for entry in entries.iter().take(10000) {
-                match parse_clash(entry) {
-                    Ok(n) => nodes.push(n),
+                match parse_singbox(entry) {
+                    Ok(Some(node)) => nodes.push(node),
+                    Ok(None) => {}
                     Err(_) => rejected += 1,
                 }
             }
             rejected += entries.len().saturating_sub(10000);
         }
     }
-    if nodes.is_empty() && !decoded.contains("proxies:") {
+    if nodes.is_empty() {
+        if let Ok(v) = serde_yaml::from_str::<Value>(&decoded) {
+            if let Some(entries) = v.get("proxies").and_then(Value::as_array) {
+                format = "Clash Meta YAML";
+                for entry in entries.iter().take(10000) {
+                    match parse_clash(entry) {
+                        Ok(n) => nodes.push(n),
+                        Err(_) => rejected += 1,
+                    }
+                }
+                rejected += entries.len().saturating_sub(10000);
+            }
+        }
+    }
+    if nodes.is_empty() && !decoded.contains("proxies:") && !decoded.contains("\"outbounds\"") {
         for line in decoded
             .lines()
             .map(str::trim)
@@ -69,9 +102,15 @@ pub fn parse(payload: &str) -> Result<(Vec<Node>, usize), String> {
     let mut seen = HashSet::new();
     nodes.retain(|n| seen.insert(n.id.clone()));
     if nodes.is_empty() {
-        return Err("未解析到有效节点。支持分享链接、Base64 订阅和 Clash YAML。".into());
+        return Err(
+            "未解析到有效节点。支持分享链接、Base64、Clash Meta YAML 和 sing-box JSON。".into(),
+        );
     }
-    Ok((nodes, rejected))
+    Ok(ParsedNodes {
+        nodes,
+        rejected,
+        format: format.to_string(),
+    })
 }
 
 pub fn parse_link(raw: &str) -> Result<Node, String> {
@@ -285,6 +324,79 @@ fn parse_clash(v: &Value) -> Result<Node, String> {
     }
     finish(n)
 }
+
+fn parse_singbox(v: &Value) -> Result<Option<Node>, String> {
+    let protocol = match field(v, "type").as_str() {
+        "shadowsocks" => "ss".to_string(),
+        "socks5" => "socks".to_string(),
+        "hy2" => "hysteria2".to_string(),
+        "direct" | "block" | "dns" | "selector" | "urltest" => return Ok(None),
+        value => value.to_string(),
+    };
+    if protocol.is_empty() {
+        return Ok(None);
+    }
+    let raw = serde_json::to_string(v).map_err(|e| e.to_string())?;
+    let mut n = Node {
+        id: id(&raw),
+        raw,
+        protocol,
+        name: field(v, "tag"),
+        address: field(v, "server"),
+        port: field(v, "server_port").parse().map_err(|_| "端口无效")?,
+        network: "tcp".into(),
+        security: "none".into(),
+        vmess_security: "auto".into(),
+        ..Node::default()
+    };
+    n.user_id = field(v, "uuid");
+    if n.user_id.is_empty() {
+        n.user_id = field(v, "username");
+    }
+    n.password = field(v, "password");
+    n.method = field(v, "method");
+    n.flow = field(v, "flow");
+    n.alter_id = field(v, "alter_id").parse().unwrap_or(0);
+    n.vmess_security = field(v, "security");
+    if n.vmess_security.is_empty() {
+        n.vmess_security = "auto".into();
+    }
+
+    let transport = &v["transport"];
+    let transport_type = field(transport, "type");
+    if !transport_type.is_empty() {
+        n.network = transport_type;
+    }
+    n.path = field(transport, "path");
+    n.host = field(&transport["headers"], "Host");
+    if n.host.is_empty() {
+        n.host = field(&transport["headers"], "host");
+    }
+    n.service_name = field(transport, "service_name");
+
+    let tls = &v["tls"];
+    if truth(&field(tls, "enabled")) {
+        n.security = "tls".into();
+    }
+    n.sni = field(tls, "server_name");
+    n.allow_insecure = truth(&field(tls, "insecure"));
+    n.fingerprint = field(&tls["utls"], "fingerprint");
+    if let Some(alpn) = tls["alpn"].as_array() {
+        n.alpn = alpn
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join(",");
+    }
+    if truth(&field(&tls["reality"], "enabled")) {
+        n.security = "reality".into();
+        n.public_key = field(&tls["reality"], "public_key");
+        n.short_id = field(&tls["reality"], "short_id");
+    }
+    n.obfs = field(&v["obfs"], "type");
+    n.obfs_password = field(&v["obfs"], "password");
+    finish(n).map(Some)
+}
 fn finish(mut n: Node) -> Result<Node, String> {
     if n.address.is_empty() || n.port == 0 {
         return Err("节点地址或端口无效".into());
@@ -360,5 +472,23 @@ mod tests {
         assert_eq!(n.len(), 1);
         assert_eq!(rejected, 1);
         assert!(parse("bad").is_err());
+    }
+    #[test]
+    fn singbox_json_and_clash_meta_fields() {
+        let parsed = parse_detailed(
+            r#"{"outbounds":[{"type":"selector","tag":"auto","outbounds":["node"]},{"type":"vless","tag":"node","server":"example.com","server_port":443,"uuid":"00000000-0000-0000-0000-000000000001","flow":"xtls-rprx-vision","transport":{"type":"ws","path":"/ws","headers":{"Host":"cdn.example.com"}},"tls":{"enabled":true,"server_name":"example.com","utls":{"enabled":true,"fingerprint":"chrome"},"reality":{"enabled":true,"public_key":"key","short_id":"01"}}}]}"#,
+        )
+        .unwrap();
+        assert_eq!(parsed.format, "sing-box JSON");
+        assert_eq!(parsed.nodes.len(), 1);
+        assert_eq!(parsed.nodes[0].network, "ws");
+        assert_eq!(parsed.nodes[0].host, "cdn.example.com");
+        assert_eq!(parsed.nodes[0].security, "reality");
+        assert_eq!(parsed.nodes[0].fingerprint, "chrome");
+
+        let parsed = parse_detailed("proxies:\n - name: meta\n   type: hysteria2\n   server: example.com\n   port: 443\n   password: pass\n   obfs: salamander\n   obfs-password: secret").unwrap();
+        assert_eq!(parsed.format, "Clash Meta YAML");
+        assert_eq!(parsed.nodes[0].protocol, "hysteria2");
+        assert_eq!(parsed.nodes[0].obfs_password, "secret");
     }
 }

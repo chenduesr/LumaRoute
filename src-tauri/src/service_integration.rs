@@ -102,7 +102,7 @@ fn real_cores_isolated_protocols_connections_subscriptions_and_cleanup() {
     // Run the actual shipped executables against every supported protocol and transport.
     let samples = [
         format!("vless://{UUID}@127.0.0.1:443#vless"),
-        format!("trojan://test-password@127.0.0.1:443#trojan"),
+        "trojan://test-password@127.0.0.1:443#trojan".to_string(),
         "ss://YWVzLTEyOC1nY206dGVzdA@127.0.0.1:443#ss".into(),
         "socks://u:p@127.0.0.1:443#socks".into(),
         "http://u:p@127.0.0.1:443#http".into(),
@@ -338,7 +338,7 @@ fn real_cores_isolated_protocols_connections_subscriptions_and_cleanup() {
     let diagnostic_summary = service.diagnostics().unwrap();
     assert!(diagnostic_summary.contains("诊断完成"));
     let diagnostic_report = service.snapshot().diagnostics.unwrap();
-    assert_eq!(diagnostic_report.checks.len(), 7);
+    assert_eq!(diagnostic_report.checks.len(), 11);
     assert_eq!(
         diagnostic_report
             .checks

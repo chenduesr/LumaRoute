@@ -6,7 +6,7 @@ mod service;
 mod storage;
 mod windows;
 use serde_json::{json, Value};
-use service::Service;
+use service::{Service, UiEvent};
 use std::sync::{atomic::Ordering, Arc};
 use tauri::{
     menu::{Menu, MenuItem},
@@ -128,7 +128,7 @@ async fn proxy_action(
                 Ok(Value::Null)
             }
             "diagnostics" => {
-                state.start_job("diagnostics", 7, |service| service.diagnostics())?;
+                state.start_job("diagnostics", 11, |service| service.diagnostics())?;
                 Ok(Value::Null)
             }
             "exportDiagnostics" => Ok(json!(state.export_diagnostics()?)),
@@ -219,6 +219,21 @@ pub fn run() {
                 app.path().resource_dir()?.join("cores")
             };
             let state = Service::new(root, resources, isolated).map_err(std::io::Error::other)?;
+            let (event_tx, event_rx) = std::sync::mpsc::channel();
+            state.attach_events(event_tx);
+            let event_app = app.handle().clone();
+            std::thread::spawn(move || {
+                while let Ok(event) = event_rx.recv() {
+                    match event {
+                        UiEvent::Snapshot(snapshot) => {
+                            let _ = event_app.emit("proxy-snapshot", snapshot);
+                        }
+                        UiEvent::Log(entry) => {
+                            let _ = event_app.emit("proxy-log", entry);
+                        }
+                    }
+                }
+            });
             let show = MenuItem::with_id(app, "show", "打开 LumaRoute", true, None::<&str>)?;
             let status = MenuItem::with_id(app, "status", "↑ 0 B/s  ↓ 0 B/s", false, None::<&str>)?;
             let current =

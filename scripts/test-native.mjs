@@ -60,7 +60,10 @@ let subscriptionBody = "",
   subscriptionFailure = false;
 const server = createServer((req, res) => {
   if (req.url === "/subscription") {
-    res.writeHead(subscriptionFailure ? 503 : 200);
+    res.writeHead(subscriptionFailure ? 503 : 200, {
+      "Subscription-Userinfo":
+        "upload=1024; download=2048; total=10485760; expire=1893456000",
+    });
     res.end(subscriptionFailure ? "temporary failure" : subscriptionBody);
   } else {
     res.writeHead(200, { "Content-Type": "text/plain" });
@@ -295,7 +298,14 @@ try {
   await expect(
     page.getByRole("button", { name: "选择 Native-Fixture" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "选择 Native-Fixture" }).click();
+  const importedNode = (await snapshot()).data.nodes.find(
+    (node) => node.name === "Native-Fixture",
+  );
+  await action("select", { id: importedNode.id });
+  await expect(
+    page.getByRole("button", { name: "选择 Native-Fixture" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  check("Backend state events update the UI without one-second polling");
   await page.getByRole("button", { name: "Native-Fixture的操作" }).click();
   await page.getByRole("menuitem", { name: "节点详情" }).click();
   await expect(dialog.getByRole("heading", { name: "节点详情" })).toBeVisible();
@@ -352,6 +362,8 @@ try {
     .toBe(2);
   await expect.poll(async () => (await snapshot()).job.running).toBe(false);
   expect((await snapshot()).data.subscriptions[0].id).toBeTruthy();
+  expect((await snapshot()).data.subscriptions[0].format).toBe("分享链接");
+  expect((await snapshot()).data.subscriptions[0].totalBytes).toBe(10485760);
   await page.getByRole("button", { name: "测试当前节点，HTTP 延迟" }).click();
   await expect
     .poll(async () => (await snapshot()).job.message, { timeout: 20000 })
@@ -381,6 +393,9 @@ try {
     dialog.getByText("识别剪贴板或二维码，保存后立即获取节点。"),
   ).toBeVisible();
   await dialog.getByRole("button", { name: "关闭对话框" }).click();
+  await expect(page.getByText("格式：分享链接", { exact: true })).toBeVisible();
+  await expect(page.getByText("订阅流量", { exact: true })).toBeVisible();
+  await expect(page.getByText(/到期时间：/)).toBeVisible();
   subscriptionFailure = true;
   await page.getByRole("button", { name: "立即更新" }).click();
   await expect
@@ -398,10 +413,14 @@ try {
   await expect
     .poll(async () => (await snapshot()).job.running, { timeout: 20000 })
     .toBe(false);
-  expect((await snapshot()).diagnostics.checks).toHaveLength(7);
+  expect((await snapshot()).diagnostics.checks).toHaveLength(11);
   await expect(page.locator(".diagnostic-report")).toContainText(
     "核心文件与版本",
   );
+  await expect(page.locator(".diagnostic-report")).toContainText(
+    "DNS 泄漏风险",
+  );
+  await expect(page.locator(".diagnostic-report")).toContainText("IPv6 可用性");
   const diagnostics = await action("exportDiagnostics");
   expect(diagnostics.endsWith(".zip")).toBe(true);
   await page.screenshot({ path: resolve(artifactRoot, "native-logs.png") });

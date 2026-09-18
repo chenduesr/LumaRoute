@@ -326,7 +326,7 @@ export function SimpleMode({
 
       <footer className="simple-footer">
         <span>{data?.nodes.length ?? 0} 个节点</span>
-        <span>v0.3.1</span>
+        <span>v{data?.version ?? "…"}</span>
       </footer>
     </div>
   );

@@ -38,7 +38,7 @@ npm run tauri build # Windows x64 EXE 安装包和 MSI
 
 ## 功能
 
-- 节点：分享链接、Base64、Clash YAML 导入，去重、搜索、筛选、排序、选择、重命名、删除、详情与敏感原文显示。
+- 节点：分享链接、Base64、Clash Meta YAML 与 sing-box JSON 导入，去重、搜索、筛选、排序、选择、重命名、删除、详情与敏感原文显示。
 - 订阅：多个来源、手动/定时更新、失败保留原节点、取消任务。
 - 连接：Xray 管理 HTTP/SOCKS 入口、路由与 DNS；AnyTLS/TUIC 使用 sing-box SOCKS 桥接。全部本地入口仅监听 127.0.0.1。
 - 测速：TCP、实际代理 HTTP、下载采样，支持并发、重试和取消；HTTPS 也经过被测节点。
@@ -52,7 +52,10 @@ npm run tauri build # Windows x64 EXE 安装包和 MSI
 - 完整模式与简洁模式分别记忆窗口位置、逻辑尺寸和最大化状态；自绘标题栏支持双击最大化，尺寸按 Windows DPI 缩放比例换算。
 - 启动时可依次更新全部订阅；失败时保留旧节点，并在更新结束后执行自动连接。
 - 连接状态区分核心启动、本地端口就绪、远端验证、网络不可用、核心异常和系统代理失败；休眠恢复、网络接口变化及定期检查会重新验证当前节点。可选的自动恢复仅重启当前节点，五分钟内最多一次。
-- 一键连接诊断检查双核心、HTTP/SOCKS 端口、节点 TCP、代理 HTTP、DNS、Windows 系统代理和实际出口 IP，并针对失败项目给出处理建议。
+- 一键连接诊断检查双核心、HTTP/SOCKS 端口、节点 TCP、代理 HTTP、DNS 解析与路径、DNS 泄漏配置风险、IPv6、双栈连接、Windows 系统代理和实际出口 IP，并针对失败项目给出处理建议。
+- 订阅更新识别 `subscription-userinfo` 流量与到期时间，并在订阅卡片显示格式、已用流量、剩余额度和到期状态。
+- 前端通过 Tauri 事件接收连接、任务、流量和日志更新；空闲状态只保留低频兜底同步。
+- `.github/workflows/windows-release.yml` 在推送版本标签后自动验证、构建 EXE/MSI、生成源码包及 SHA-256，并创建或更新 GitHub Release。
 
 Xray 已移除 `allowInsecure`：自签名 TLS 节点可在详情填写服务器证书 **SHA-256 指纹**（64 位十六进制，可含冒号）。不会自动把未知证书当作可信证书。
 
@@ -73,7 +76,7 @@ EXE 安装器面向当前用户，提供简体中文/英文；MSI 为简体中�
 src/
   components/     # 标题栏、Radix 弹窗与提示
   pages/          # 概览、节点、订阅、日志、设置
-  hooks/          # Rust 状态轮询、主题与外观存储
+  hooks/          # Tauri 状态事件、主题与外观存储
   lib/            # IPC、TypeScript 类型
   assets/         # 标志
 src-tauri/

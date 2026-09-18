@@ -162,7 +162,7 @@ export default function App() {
                       className={`status-dot ${snapshot?.connection.status === "connected" ? "" : "offline"}`}
                     />
                     {connectionStatusText(snapshot?.connection.status)}
-                    <span>v0.3.1</span>
+                    <span>v{snapshot?.version ?? "…"}</span>
                   </div>
                 </div>
               </aside>

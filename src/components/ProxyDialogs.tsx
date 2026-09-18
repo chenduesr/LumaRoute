@@ -74,7 +74,7 @@ export function ImportDialog({
   return (
     <Modal
       title="导入节点"
-      description="粘贴分享链接、Base64 订阅内容或 Clash YAML。不会读取旧版数据。"
+      description="粘贴分享链接、Base64、Clash Meta YAML 或 sing-box JSON。不会读取旧版数据。"
       onClose={onClose}
     >
       <form
@@ -171,6 +171,11 @@ export function SubscriptionDialog({
       lastUpdated: null,
       lastAttempt: null,
       error: null,
+      format: "",
+      uploadBytes: null,
+      downloadBytes: null,
+      totalBytes: null,
+      expiresAt: null,
     },
   );
   const [busy, setBusy] = useState(false);

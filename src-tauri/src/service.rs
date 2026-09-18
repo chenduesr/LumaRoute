@@ -31,6 +31,55 @@ struct Runtime {
     processes: Option<ProcessSet>,
     connection: Connection,
 }
+#[derive(Default)]
+struct SubscriptionInfo {
+    provided: bool,
+    upload_bytes: Option<u64>,
+    download_bytes: Option<u64>,
+    total_bytes: Option<u64>,
+    expires_at: Option<String>,
+}
+pub enum UiEvent {
+    Snapshot(Box<Snapshot>),
+    Log(LogEntry),
+}
+
+fn subscription_info(value: Option<&reqwest::header::HeaderValue>) -> SubscriptionInfo {
+    let Some(value) = value.and_then(|value| value.to_str().ok()) else {
+        return SubscriptionInfo::default();
+    };
+    let mut info = SubscriptionInfo {
+        provided: true,
+        ..SubscriptionInfo::default()
+    };
+    for item in value.split(';') {
+        let Some((key, value)) = item.trim().split_once('=') else {
+            continue;
+        };
+        let number = value.trim().parse::<u64>().ok();
+        match key.trim().to_ascii_lowercase().as_str() {
+            "upload" => info.upload_bytes = number,
+            "download" => info.download_bytes = number,
+            "total" => info.total_bytes = number,
+            "expire" => {
+                info.expires_at = number.and_then(|timestamp| {
+                    if timestamp == 0 {
+                        return None;
+                    }
+                    let seconds = if timestamp > 10_000_000_000 {
+                        timestamp / 1000
+                    } else {
+                        timestamp
+                    };
+                    chrono::DateTime::<chrono::Utc>::from_timestamp(seconds as i64, 0)
+                        .map(|value| value.to_rfc3339())
+                });
+            }
+            _ => {}
+        }
+    }
+    info
+}
 pub struct Service {
     pub root: PathBuf,
     pub data: Mutex<Data>,
@@ -45,6 +94,7 @@ pub struct Service {
     diagnostics: Mutex<Option<DiagnosticReport>>,
     last_auto_restart: Mutex<Option<Instant>>,
     storage_error: Mutex<Option<String>>,
+    event_tx: Mutex<Option<std::sync::mpsc::Sender<UiEvent>>>,
     pub child_job: windows::ChildJob,
     pub isolated: bool,
 }
@@ -90,6 +140,7 @@ impl Service {
             diagnostics: Mutex::new(None),
             last_auto_restart: Mutex::new(None),
             storage_error: Mutex::new(error),
+            event_tx: Mutex::new(None),
             child_job: windows::ChildJob::new()?,
             isolated,
         });
@@ -108,6 +159,22 @@ impl Service {
         service.log("INFO", "app", "LumaRoute 原生业务服务已启动");
         Ok(service)
     }
+    pub fn attach_events(&self, event_tx: std::sync::mpsc::Sender<UiEvent>) {
+        *self.event_tx.lock().unwrap() = Some(event_tx);
+        self.emit_snapshot();
+    }
+    fn emit_snapshot(&self) {
+        let sender = self.event_tx.lock().unwrap().clone();
+        if let Some(sender) = sender {
+            let _ = sender.send(UiEvent::Snapshot(Box::new(self.snapshot())));
+        }
+    }
+    fn emit_log(&self, entry: &LogEntry) {
+        let sender = self.event_tx.lock().unwrap().clone();
+        if let Some(sender) = sender {
+            let _ = sender.send(UiEvent::Log(entry.clone()));
+        }
+    }
     pub fn log(&self, level: &str, source: &str, message: &str) {
         let entry = LogEntry {
             timestamp: now(),
@@ -120,6 +187,7 @@ impl Service {
         while logs.len() > 1000 {
             logs.pop_front();
         }
+        drop(logs);
         let path = self.root.join("app.log");
         if fs::metadata(&path)
             .map(|m| m.len() > 2 * 1024 * 1024)
@@ -138,6 +206,7 @@ impl Service {
                 serde_json::to_string(&entry).unwrap_or_default()
             );
         }
+        self.emit_log(&entry);
     }
     pub fn snapshot(&self) -> Snapshot {
         let data = self.data.lock().unwrap().clone();
@@ -149,6 +218,7 @@ impl Service {
         let diagnostics = self.diagnostics.lock().unwrap().clone();
         let storage_error = self.storage_error.lock().unwrap().clone();
         Snapshot {
+            version: env!("CARGO_PKG_VERSION").into(),
             isolated: self.isolated,
             data,
             connection,
@@ -169,6 +239,8 @@ impl Service {
         f(&mut next)?;
         storage::save(&self.root, &next)?;
         *data = next;
+        drop(data);
+        self.emit_snapshot();
         Ok(())
     }
     pub fn restore_backup(&self) -> Result<(), String> {
@@ -197,6 +269,7 @@ impl Service {
         storage::save(&self.root, &d)?;
         *self.data.lock().unwrap() = d;
         *self.storage_error.lock().unwrap() = None;
+        self.emit_snapshot();
         Ok(())
     }
     pub fn save_settings(&self, s: Settings) -> Result<(), String> {
@@ -328,10 +401,20 @@ impl Service {
                     sub.last_updated = old.last_updated.clone();
                     sub.last_attempt = old.last_attempt.clone();
                     sub.error = old.error.clone();
+                    sub.format = old.format.clone();
+                    sub.upload_bytes = old.upload_bytes;
+                    sub.download_bytes = old.download_bytes;
+                    sub.total_bytes = old.total_bytes;
+                    sub.expires_at = old.expires_at.clone();
                 } else {
                     sub.last_updated = None;
                     sub.last_attempt = None;
                     sub.error = None;
+                    sub.format.clear();
+                    sub.upload_bytes = None;
+                    sub.download_bytes = None;
+                    sub.total_bytes = None;
+                    sub.expires_at = None;
                 }
                 *old = sub;
             } else {
@@ -386,6 +469,7 @@ impl Service {
         self.cancel.store(false, Ordering::SeqCst);
         let s = self.clone();
         drop(j);
+        self.emit_snapshot();
         thread::spawn(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(s.clone())))
                 .unwrap_or_else(|_| Err("后台任务异常中断，已清理核心进程".into()));
@@ -398,6 +482,8 @@ impl Service {
                     redact(&e)
                 }
             };
+            drop(job);
+            s.emit_snapshot();
         });
         Ok(())
     }
@@ -410,6 +496,7 @@ impl Service {
     }
     pub fn cancel(&self) {
         self.cancel.store(true, Ordering::SeqCst);
+        self.emit_snapshot();
     }
     fn client(timeout: u64) -> Result<reqwest::blocking::Client, String> {
         reqwest::blocking::Client::builder()
@@ -451,6 +538,51 @@ impl Service {
         }
         Ok(result)
     }
+    fn fetch_subscription(
+        &self,
+        url: &str,
+        limit: usize,
+    ) -> Result<(Vec<u8>, SubscriptionInfo), String> {
+        self.cancelled()?;
+        let mut response = Self::client(90)?
+            .get(url)
+            .header(
+                reqwest::header::ACCEPT,
+                "application/yaml, application/json, text/yaml, text/plain, */*",
+            )
+            .send()
+            .map_err(|e| format!("网络请求失败：{}", redact(&e.to_string())))?
+            .error_for_status()
+            .map_err(|e| {
+                format!(
+                    "服务器返回错误：{}",
+                    e.status().map(|s| s.as_u16()).unwrap_or(0)
+                )
+            })?;
+        if response.content_length().unwrap_or(0) > limit as u64 {
+            return Err("下载内容超过大小限制".into());
+        }
+        let usage = subscription_info(
+            response
+                .headers()
+                .get("subscription-userinfo")
+                .or_else(|| response.headers().get("subscription-user-info")),
+        );
+        let mut result = Vec::new();
+        let mut buf = [0; 65536];
+        loop {
+            self.cancelled()?;
+            let n = response.read(&mut buf).map_err(|e| e.to_string())?;
+            if n == 0 {
+                break;
+            }
+            if result.len() + n > limit {
+                return Err("下载内容超过大小限制".into());
+            }
+            result.extend_from_slice(&buf[..n]);
+        }
+        Ok((result, usage))
+    }
     pub fn update_subscription(&self, id: &str) -> Result<String, String> {
         let sub = self
             .data
@@ -468,11 +600,14 @@ impl Service {
             Ok(())
         })?;
         let result: Result<String, String> = (|| {
-            let bytes = self.fetch_limited(&sub.url, 8 * 1024 * 1024)?;
-            let (nodes, skipped) =
-                parser::parse(&String::from_utf8(bytes).map_err(|_| "订阅不是有效 UTF-8")?)?;
+            let (bytes, usage) = self.fetch_subscription(&sub.url, 8 * 1024 * 1024)?;
+            let parsed = parser::parse_detailed(
+                &String::from_utf8(bytes).map_err(|_| "订阅不是有效 UTF-8")?,
+            )?;
             self.cancelled()?;
-            let count = nodes.len();
+            let count = parsed.nodes.len();
+            let skipped = parsed.rejected;
+            let source_format = parsed.format;
             self.change(|d| {
                 let active_was_from_subscription = d
                     .active_node_id
@@ -487,7 +622,7 @@ impl Service {
                     .cloned()
                     .collect();
                 d.nodes.retain(|n| n.subscription_id.as_deref() != Some(id));
-                for mut n in nodes {
+                for mut n in parsed.nodes {
                     n.id = crate::models::id(&format!("{id}:{}", n.raw));
                     n.subscription_id = Some(id.into());
                     if let Some(prev) = old.iter().find(|o| o.id == n.id) {
@@ -523,6 +658,13 @@ impl Service {
                 if let Some(s) = d.subscriptions.iter_mut().find(|s| s.id == id) {
                     s.last_updated = Some(now());
                     s.error = None;
+                    s.format = source_format;
+                    if usage.provided {
+                        s.upload_bytes = usage.upload_bytes;
+                        s.download_bytes = usage.download_bytes;
+                        s.total_bytes = usage.total_bytes;
+                        s.expires_at = usage.expires_at;
+                    }
                 }
                 Ok(())
             })?;
@@ -548,6 +690,7 @@ impl Service {
             job.completed = 0;
             job.message = format!("正在更新订阅 0 / {}", ids.len());
         }
+        self.emit_snapshot();
         let mut succeeded = 0usize;
         let mut failed = 0usize;
         let mut first_error = None;
@@ -566,6 +709,8 @@ impl Service {
             let mut job = self.job.lock().unwrap();
             job.completed = index + 1;
             job.message = format!("正在更新订阅 {} / {}", job.completed, job.total);
+            drop(job);
+            self.emit_snapshot();
         }
         if succeeded == 0 && failed > 0 {
             return Err(format!(
@@ -610,6 +755,7 @@ impl Service {
             recovery_reason: recovery_reason.clone(),
             ..Connection::default()
         };
+        self.emit_snapshot();
         let result: Result<(), String> = (|| {
             let guards = vec![
                 std::net::TcpListener::bind(("127.0.0.1", data.settings.http_port))
@@ -649,6 +795,7 @@ impl Service {
                 runtime.connection.since = Some(now());
                 runtime.connection.recovery_reason = recovery_reason.clone();
             }
+            self.emit_snapshot();
             if let Some(id) = selected.as_ref() {
                 self.select(id)?;
             }
@@ -659,6 +806,7 @@ impl Service {
                     data.settings.socks_port,
                 ) {
                     self.runtime.lock().unwrap().connection.status = "proxyFailed".into();
+                    self.emit_snapshot();
                     return Err(format!("系统代理应用失败：{error}"));
                 }
             }
@@ -668,6 +816,7 @@ impl Service {
                 runtime.connection.system_proxy = data.settings.system_proxy;
                 runtime.connection.status = "verifying".into();
             }
+            self.emit_snapshot();
             Ok(())
         })();
         if let Err(e) = result {
@@ -686,6 +835,7 @@ impl Service {
                 recovery_reason,
                 ..Connection::default()
             };
+            self.emit_snapshot();
             return Err(e);
         }
         match self.verify_active_connection(recovery_reason.as_deref()) {
@@ -743,7 +893,8 @@ impl Service {
             runtime.connection.status = "verifying".into();
             runtime.connection.recovery_reason = reason.map(str::to_string);
         }
-        let timeout = Duration::from_secs(settings.test_timeout.min(10).max(3));
+        self.emit_snapshot();
+        let timeout = Duration::from_secs(settings.test_timeout.clamp(3, 10));
         let proxy_state = if settings.system_proxy && !self.isolated {
             windows::proxy_matches(settings.http_port, settings.socks_port)
                 .map_err(|error| format!("无法读取 Windows 系统代理：{error}"))
@@ -794,6 +945,8 @@ impl Service {
             });
             runtime.connection.recovery_reason = reason.map(str::to_string);
         }
+        drop(runtime);
+        self.emit_snapshot();
         result
     }
     fn stop_inner(&self) -> Result<(), String> {
@@ -811,6 +964,8 @@ impl Service {
             error: restore.as_ref().err().cloned(),
             ..Connection::default()
         };
+        drop(runtime);
+        self.emit_snapshot();
         if had {
             self.log("INFO", "connection", "核心进程已停止");
         }
@@ -852,6 +1007,7 @@ impl Service {
             singbox_installed: cores::exe(&self.root, "singbox").exists(),
             singbox_version: version("singbox"),
         };
+        self.emit_snapshot();
     }
 }
 
@@ -1020,6 +1176,8 @@ impl Service {
                 let mut j = self.job.lock().unwrap();
                 j.completed += 1;
                 j.message = format!("已测试 {} / {}", j.completed, j.total);
+                drop(j);
+                self.emit_snapshot();
             }
         }
         Ok(format!("测速完成：{succeeded} / {} 可用", nodes.len()))
@@ -1146,9 +1304,10 @@ impl Service {
         let data = self.data.lock().unwrap().clone();
         {
             let mut job = self.job.lock().unwrap();
-            job.total = 7;
+            job.total = 11;
             job.completed = 0;
         }
+        self.emit_snapshot();
         let mut checks: Vec<DiagnosticCheck> = vec![];
         let mut add = |check: DiagnosticCheck| {
             self.log(
@@ -1164,6 +1323,8 @@ impl Service {
             let mut job = self.job.lock().unwrap();
             job.completed = checks.len();
             job.message = format!("正在诊断 {} / {}", job.completed, job.total);
+            drop(job);
+            self.emit_snapshot();
         };
         let core = self.core.lock().unwrap().clone();
         let cores_ok = core.installed && core.singbox_installed;
@@ -1267,7 +1428,7 @@ impl Service {
         let proxy_result = if connected {
             self.proxy_http_check(
                 &data.settings,
-                Duration::from_secs(data.settings.test_timeout.min(10).max(3)),
+                Duration::from_secs(data.settings.test_timeout.clamp(3, 10)),
             )
         } else {
             Err("当前未连接，无法通过本地代理发起请求".into())
@@ -1286,23 +1447,237 @@ impl Service {
         });
 
         use std::net::ToSocketAddrs;
-        let dns_host = url::Url::parse(&data.settings.test_url)
-            .ok()
-            .and_then(|url| url.host_str().map(str::to_string));
-        let dns_ok = dns_host
+        let dns_target = url::Url::parse(&data.settings.test_url).ok();
+        let dns_host = dns_target
             .as_ref()
-            .map(|host| (host.as_str(), 443).to_socket_addrs().is_ok())
-            .unwrap_or(false);
+            .and_then(|url| url.host_str().map(str::to_string));
+        let dns_port = dns_target
+            .as_ref()
+            .and_then(url::Url::port_or_known_default)
+            .unwrap_or(443);
+        let resolved = dns_host
+            .as_ref()
+            .ok_or_else(|| "测速地址缺少域名".to_string())
+            .and_then(|host| {
+                (host.as_str(), dns_port)
+                    .to_socket_addrs()
+                    .map(|values| {
+                        let mut values = values.collect::<Vec<_>>();
+                        values.sort();
+                        values.dedup();
+                        values
+                    })
+                    .map_err(|_| "测速地址域名解析失败".to_string())
+            });
+        let (ipv4_addresses, ipv6_addresses) = resolved
+            .as_ref()
+            .map(|addresses| {
+                (
+                    addresses
+                        .iter()
+                        .filter(|address| address.is_ipv4())
+                        .copied()
+                        .collect::<Vec<_>>(),
+                    addresses
+                        .iter()
+                        .filter(|address| address.is_ipv6())
+                        .copied()
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .unwrap_or_default();
         add(DiagnosticCheck {
             key: "dns".into(),
-            label: "DNS 解析".into(),
-            status: if dns_ok { "ok" } else { "failed" }.into(),
-            detail: if dns_ok {
-                format!("{} 可以解析", dns_host.unwrap_or_default())
+            label: "DNS 解析结果".into(),
+            status: if resolved.is_ok() { "ok" } else { "failed" }.into(),
+            detail: resolved
+                .as_ref()
+                .map(|_| {
+                    format!(
+                        "{}：IPv4 {} 个，IPv6 {} 个",
+                        dns_host.as_deref().unwrap_or("测速地址"),
+                        ipv4_addresses.len(),
+                        ipv6_addresses.len()
+                    )
+                })
+                .unwrap_or_else(|error| error.clone()),
+            suggestion: resolved
+                .is_err()
+                .then(|| "请检查 Windows DNS、自定义 DNS 地址或测速 URL".into()),
+        });
+
+        let foreign_dns = if !data.settings.dot_dns.trim().is_empty() {
+            config::list(&data.settings.dot_dns)
+        } else if !data.settings.doh_dns.trim().is_empty() {
+            config::list(&data.settings.doh_dns)
+        } else {
+            config::list(&data.settings.foreign_dns)
+        };
+        add(DiagnosticCheck {
+            key: "dnsPath".into(),
+            label: "DNS 解析路径".into(),
+            status: if data.settings.custom_dns {
+                "ok"
             } else {
-                "测速地址域名解析失败".into()
+                "warning"
+            }
+            .into(),
+            detail: if data.settings.custom_dns {
+                format!(
+                    "由 Xray 核心处理；{}；境外解析器 {} 个；当前查询策略优先 IPv4",
+                    if data.settings.split_dns {
+                        "国内/境外分流"
+                    } else {
+                        "统一解析"
+                    },
+                    foreign_dns.len()
+                )
+            } else {
+                "未启用核心自定义 DNS，域名解析依赖 Windows 与核心默认路径".into()
             },
-            suggestion: (!dns_ok).then(|| "请检查 Windows DNS 或自定义 DNS 配置".into()),
+            suggestion: (!data.settings.custom_dns)
+                .then(|| "如需明确控制解析路径，可在设置 → DNS 中启用自定义 DNS".into()),
+        });
+
+        let encrypted_foreign_dns = !foreign_dns.is_empty()
+            && foreign_dns
+                .iter()
+                .all(|server| server.starts_with("https://") || server.starts_with("tls://"));
+        let leak_check = if data.settings.proxy_mode == "direct" {
+            (
+                "skipped",
+                "直连模式不进行代理 DNS 泄漏判断".to_string(),
+                None,
+            )
+        } else if !data.settings.custom_dns {
+            (
+                "warning",
+                "代理模式仍依赖系统 DNS，域名查询可能由本地网络解析".to_string(),
+                Some("建议启用自定义 DNS，并为境外查询配置 DoH 或 DoT".into()),
+            )
+        } else if !encrypted_foreign_dns {
+            (
+                "warning",
+                "境外 DNS 未全部使用 DoH/DoT；配置检查无法确认查询是否暴露给本地网络".to_string(),
+                Some("建议将境外 DNS 配置为 HTTPS DoH 或 tls:// DoT 地址".into()),
+            )
+        } else if data.settings.split_dns {
+            (
+                "warning",
+                "境外查询使用加密 DNS；国内域名按设置分流到国内解析器，这是有意的分流路径"
+                    .to_string(),
+                Some("如需所有查询走同一路径，请关闭 DNS 分流".into()),
+            )
+        } else {
+            (
+                "ok",
+                "境外解析器均使用 DoH/DoT，未发现明显的系统 DNS 泄漏配置风险".to_string(),
+                None,
+            )
+        };
+        add(DiagnosticCheck {
+            key: "dnsLeak".into(),
+            label: "DNS 泄漏风险（配置检查）".into(),
+            status: leak_check.0.into(),
+            detail: leak_check.1,
+            suggestion: leak_check.2,
+        });
+
+        let networks = sysinfo::Networks::new_with_refreshed_list();
+        let has_global_ipv6 = networks.iter().any(|(name, network)| {
+            !name.to_lowercase().contains("loopback")
+                && network
+                    .ip_networks()
+                    .iter()
+                    .any(|network| is_global_ipv6(network.addr))
+        });
+        let connect_family = |addresses: &[std::net::SocketAddr]| {
+            addresses.iter().take(2).any(|address| {
+                std::net::TcpStream::connect_timeout(address, Duration::from_millis(1500)).is_ok()
+            })
+        };
+        let (ipv4_reachable, ipv6_reachable) = if self.isolated {
+            (None, None)
+        } else {
+            (
+                (!ipv4_addresses.is_empty()).then(|| connect_family(&ipv4_addresses)),
+                (has_global_ipv6 && !ipv6_addresses.is_empty())
+                    .then(|| connect_family(&ipv6_addresses)),
+            )
+        };
+        let ipv6_check = if self.isolated {
+            ("skipped", "隔离测试模式不探测公网 IPv6".to_string(), None)
+        } else if !has_global_ipv6 {
+            (
+                "warning",
+                "未检测到可路由的全局 IPv6 地址；当前网络将使用 IPv4".to_string(),
+                Some("如果运营商不提供 IPv6，可忽略；否则检查网卡、路由器和系统 IPv6".into()),
+            )
+        } else if ipv6_addresses.is_empty() {
+            (
+                "skipped",
+                "系统具有 IPv6，但测速域名没有返回 AAAA 记录".to_string(),
+                None,
+            )
+        } else if ipv6_reachable == Some(true) {
+            (
+                "ok",
+                "检测到全局 IPv6，并可通过 IPv6 连接测速目标".to_string(),
+                None,
+            )
+        } else {
+            (
+                "warning",
+                "系统具有 IPv6 地址，但 IPv6 连接失败或超时".to_string(),
+                Some("可能存在无效 IPv6 默认路由；可修复 IPv6 网络或暂时使用 IPv4".into()),
+            )
+        };
+        add(DiagnosticCheck {
+            key: "ipv6".into(),
+            label: "IPv6 可用性".into(),
+            status: ipv6_check.0.into(),
+            detail: ipv6_check.1,
+            suggestion: ipv6_check.2,
+        });
+
+        let dual_stack = if self.isolated {
+            ("skipped", "隔离测试模式不探测公网双栈".to_string(), None)
+        } else if ipv4_addresses.is_empty() || ipv6_addresses.is_empty() {
+            (
+                "skipped",
+                "测速域名没有同时提供 A 与 AAAA 记录，无法比较双栈".to_string(),
+                None,
+            )
+        } else {
+            match (ipv4_reachable, ipv6_reachable) {
+                (Some(true), Some(true)) => (
+                    "ok",
+                    "IPv4 与 IPv6 均可连接，双栈工作正常".to_string(),
+                    None,
+                ),
+                (Some(true), Some(false) | None) => (
+                    "warning",
+                    "IPv4 可用但 IPv6 不可用，系统需要回退到 IPv4".to_string(),
+                    Some("若访问出现首连延迟，请修复无效 IPv6 路由或调整系统地址优先级".into()),
+                ),
+                (Some(false), Some(true)) => (
+                    "warning",
+                    "IPv6 可用但 IPv4 不可用，部分仅 IPv4 服务可能失败".to_string(),
+                    Some("请检查 IPv4 网关、DNS A 记录和本机防火墙".into()),
+                ),
+                _ => (
+                    "failed",
+                    "IPv4 与 IPv6 均无法连接测速目标".to_string(),
+                    Some("请先确认本机网络可用，再检查防火墙和测速地址".into()),
+                ),
+            }
+        };
+        add(DiagnosticCheck {
+            key: "dualStack".into(),
+            label: "双栈连接".into(),
+            status: dual_stack.0.into(),
+            detail: dual_stack.1,
+            suggestion: dual_stack.2,
         });
 
         let proxy_state = if !data.settings.system_proxy {
@@ -1435,6 +1810,12 @@ impl Service {
             .map_err(|e| e.to_string())?;
         zip.write_all(&serde_json::to_vec_pretty(&summary).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
+        if let Some(report) = self.diagnostics.lock().unwrap().clone() {
+            zip.start_file("diagnostics.json", options)
+                .map_err(|e| e.to_string())?;
+            zip.write_all(&serde_json::to_vec_pretty(&report).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        }
         // Diagnostic exports include app events only, not raw core output which can contain server identities.
         let logs:Vec<_>=self.logs.lock().unwrap().iter().filter(|l|!["xray","singbox","probe"].contains(&l.source.as_str())).map(|l|json!({"timestamp":l.timestamp,"level":l.level,"source":l.source,"message":if l.level=="ERROR"{"操作失败（详细错误仅保留在本机日志）"}else{&l.message}})).collect();
         zip.start_file("events.json", options)
@@ -1484,6 +1865,7 @@ impl Service {
                             Some("核心异常退出，已停止代理并恢复系统设置".into());
                         runtime.connection.recovery_reason = Some("核心异常退出".into());
                     }
+                    s.emit_snapshot();
                     s.log(
                         "ERROR",
                         "connection",
@@ -1542,6 +1924,9 @@ impl Service {
                         let _ = storage::save(&s.root, &data);
                         save_ticks = 0;
                     }
+                }
+                if connected {
+                    s.emit_snapshot();
                 }
                 let status = s.runtime.lock().unwrap().connection.status.clone();
                 let active = s.runtime.lock().unwrap().processes.is_some();
@@ -1671,6 +2056,18 @@ fn active_network_signature(networks: &sysinfo::Networks) -> String {
     entries.join("|")
 }
 
+fn is_global_ipv6(address: std::net::IpAddr) -> bool {
+    let std::net::IpAddr::V6(address) = address else {
+        return false;
+    };
+    let octets = address.octets();
+    !address.is_loopback()
+        && !address.is_unspecified()
+        && !address.is_multicast()
+        && !(octets[0] == 0xfe && octets[1] & 0xc0 == 0x80)
+        && octets[0] & 0xfe != 0xfc
+}
+
 fn subscription_due(s: &Subscription, now: chrono::DateTime<chrono::Utc>) -> bool {
     if s.interval_hours == 0 || s.interval_hours > 720 {
         return false;
@@ -1711,6 +2108,22 @@ mod tests {
         assert!(!text.contains("private-token"));
         assert!(!text.contains("secret"));
         assert!(!text.contains("192.168"));
+    }
+    #[test]
+    fn parses_subscription_usage_header() {
+        let header = reqwest::header::HeaderValue::from_static(
+            "upload=1024; download=2048; total=10485760; expire=1893456000",
+        );
+        let info = subscription_info(Some(&header));
+        assert!(info.provided);
+        assert_eq!(info.upload_bytes, Some(1024));
+        assert_eq!(info.download_bytes, Some(2048));
+        assert_eq!(info.total_bytes, Some(10485760));
+        assert!(info
+            .expires_at
+            .as_deref()
+            .unwrap()
+            .starts_with("2030-01-01"));
     }
 }
 

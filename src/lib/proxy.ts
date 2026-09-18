@@ -74,6 +74,11 @@ export interface Subscription {
   lastUpdated: string | null;
   lastAttempt: string | null;
   error: string | null;
+  format: string;
+  uploadBytes: number | null;
+  downloadBytes: number | null;
+  totalBytes: number | null;
+  expiresAt: string | null;
 }
 export interface ProxyLog {
   timestamp: string;
@@ -104,6 +109,7 @@ export interface DiagnosticReport {
   summary: string;
 }
 export interface Snapshot {
+  version: string;
   isolated: boolean;
   data: {
     version: number;

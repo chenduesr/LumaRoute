@@ -9,7 +9,7 @@ $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $archivePath = Join-Path $OutputDirectory "LumaRoute-$version-source.zip"
 $rootFiles = @('.gitignore','.prettierignore','LICENSE','README.md','index.html','package.json','package-lock.json','tsconfig.json','tsconfig.node.json','vite.config.ts')
-$directories = @('src','public','scripts','docs','tests/fixtures','src-tauri/src','src-tauri/icons','src-tauri/capabilities','src-tauri/resources')
+$directories = @('.github','src','public','scripts','docs','tests/fixtures','src-tauri/src','src-tauri/icons','src-tauri/capabilities','src-tauri/resources')
 $files = @()
 foreach ($name in $rootFiles + @('src-tauri/Cargo.toml','src-tauri/Cargo.lock','src-tauri/build.rs','src-tauri/tauri.conf.json','src-tauri/.gitignore')) {
     $path = Join-Path $projectRoot $name

@@ -52,6 +52,7 @@ const settings = {
   autoCheckUpdates: false,
 };
 const snapshot = {
+  version: "0.3.2",
   isolated: true,
   data: {
     version: 1,
@@ -101,6 +102,11 @@ const snapshot = {
         lastUpdated: new Date().toISOString(),
         lastAttempt: new Date().toISOString(),
         error: null,
+        format: "Clash Meta YAML",
+        uploadBytes: 1024,
+        downloadBytes: 2048,
+        totalBytes: 10485760,
+        expiresAt: "2030-01-01T00:00:00Z",
       },
     ],
     activeNodeId: "fixture-node",
