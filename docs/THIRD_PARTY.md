@@ -2,12 +2,13 @@
 
 核心使用官方 Windows amd64 二进制，不修改核心代码。准确版本、下载 URL、压缩包和资源 SHA-256 见 `scripts/cores.lock.json`。
 
-| 组件      | 版本     | 官方源代码 / 发布                                 | 随附许可                                                                       |
-| --------- | -------- | ------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Xray-core | v26.3.27 | https://github.com/XTLS/Xray-core/tree/v26.3.27   | `src-tauri/resources/xray/LICENSE`，MPL 2.0                                    |
-| sing-box  | v1.14.1  | https://github.com/SagerNet/sing-box/tree/v1.14.1 | `src-tauri/resources/singbox/LICENSE`，GPL 3.0 或更新版本，附名称/关联声明条件 |
+| 组件      | 版本                     | 官方源代码 / 发布                                 | 随附许可                                                                       |
+| --------- | ------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Xray-core | v26.3.27                 | https://github.com/XTLS/Xray-core/tree/v26.3.27   | `src-tauri/resources/xray/LICENSE`，MPL 2.0                                    |
+| Wintun    | Xray v26.3.27 发布包随附 | https://www.wintun.net/                           | `src-tauri/resources/xray/LICENSE-wintun.txt`，预编译二进制许可                |
+| sing-box  | v1.14.1                  | https://github.com/SagerNet/sing-box/tree/v1.14.1 | `src-tauri/resources/singbox/LICENSE`，GPL 3.0 或更新版本，附名称/关联声明条件 |
 
-Xray 的 geoip/geosite 与 sing-box 的 libcronet.dll 来自同一份经校验的官方发布压缩包。核心许可证随安装器资源一起分发。
+Xray 的 geoip/geosite/wintun.dll 与 sing-box 的 libcronet.dll 来自各自经校验的官方发布压缩包。核心和 Wintun 许可证随安装器资源一起分发。
 
 - Xray 发布包：https://github.com/XTLS/Xray-core/releases/tag/v26.3.27
 - sing-box 发布包：https://github.com/SagerNet/sing-box/releases/tag/v1.14.1

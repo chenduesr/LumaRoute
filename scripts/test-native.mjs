@@ -108,9 +108,12 @@ try {
     await writeFile(
       resolve(dataRoot, "profile.json"),
       JSON.stringify({
-        version: 1,
+        version: 2,
         settings: {
-          systemProxy: false,
+          captureMode: "none",
+          tunIpv6: true,
+          tunBypassLan: true,
+          tunMtu: 1500,
           autoConnect: false,
           minimizeToTray: false,
         },
@@ -180,12 +183,24 @@ try {
     0,
   );
   await expect(page.getByRole("heading", { name: "未连接" })).toBeVisible();
+  await page.getByRole("button", { name: "选择流量接管方式" }).click();
+  await page.getByRole("menuitem", { name: /TUN 模式/ }).click();
+  await expect
+    .poll(async () => (await snapshot()).data.settings.captureMode)
+    .toBe("tun");
+  await page.getByRole("button", { name: "选择流量接管方式" }).click();
+  await page.getByRole("menuitem", { name: /仅本地代理/ }).click();
+  await expect
+    .poll(async () => (await snapshot()).data.settings.captureMode)
+    .toBe("none");
   expect(
     initial.core.installed &&
       initial.core.singboxInstalled &&
       initial.core.geoReady,
   ).toBe(true);
-  check("Default simple mode, LumaRoute brand and bundled core resources");
+  check(
+    "Default simple mode, capture selector, brand and bundled core resources",
+  );
   await page.getByRole("button", { name: "完整模式" }).click();
   await expect(
     page.getByRole("heading", { name: "连接，从容一点。" }),
@@ -270,7 +285,7 @@ try {
   await expect
     .poll(async () => (await snapshot()).data.settings.httpPort)
     .toBe(httpPort);
-  expect((await snapshot()).data.settings.systemProxy).toBe(false);
+  expect((await snapshot()).data.settings.captureMode).toBe("none");
   const encryptedProfile = await readFile(resolve(dataRoot, "profile.json"));
   expect(
     encryptedProfile.subarray(0, 18).equals(Buffer.from("LUMAROUTE-DPAPI-1\0")),
@@ -331,7 +346,7 @@ try {
   await expect
     .poll(async () => (await snapshot()).connection.status, { timeout: 20000 })
     .toBe("connected");
-  expect((await snapshot()).connection.systemProxy).toBe(false);
+  expect((await snapshot()).connection.captureMode).toBe("none");
   await nav("概览").click();
   await expect(
     page.getByRole("heading", { name: "已连接并验证" }),
@@ -403,6 +418,9 @@ try {
       timeout: 15000,
     })
     .toBeTruthy();
+  await expect
+    .poll(async () => (await snapshot()).job.running, { timeout: 5000 })
+    .toBe(false);
   expect((await snapshot()).data.nodes.length).toBe(2);
   await page.screenshot({
     path: resolve(artifactRoot, "native-subscription-failure.png"),
@@ -411,7 +429,10 @@ try {
   await nav("日志").click();
   await page.getByRole("button", { name: "运行诊断" }).click();
   await expect
-    .poll(async () => (await snapshot()).job.running, { timeout: 20000 })
+    .poll(async () => (await snapshot()).job.running, { timeout: 5000 })
+    .toBe(true);
+  await expect
+    .poll(async () => (await snapshot()).job.running, { timeout: 45000 })
     .toBe(false);
   expect((await snapshot()).diagnostics.checks).toHaveLength(11);
   await expect(page.locator(".diagnostic-report")).toContainText(
@@ -430,6 +451,9 @@ try {
     "chenduesr/LumaRoute",
   );
   await page.getByRole("button", { name: "检查应用更新", exact: true }).click();
+  await expect
+    .poll(async () => (await snapshot()).job.running, { timeout: 5000 })
+    .toBe(true);
   await expect
     .poll(async () => (await snapshot()).job.running, { timeout: 15000 })
     .toBe(false);

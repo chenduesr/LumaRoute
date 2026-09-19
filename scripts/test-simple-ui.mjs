@@ -23,7 +23,10 @@ const settings = {
   socksPort: 7891,
   proxyMode: "rule",
   routingMode: "smart",
-  systemProxy: false,
+  captureMode: "none",
+  tunIpv6: true,
+  tunBypassLan: true,
+  tunMtu: 1500,
   bypassMainland: true,
   startOnBoot: false,
   autoConnect: false,
@@ -55,7 +58,7 @@ const snapshot = {
   version: "0.3.2",
   isolated: true,
   data: {
-    version: 1,
+    version: 2,
     settings,
     nodes: [
       {
@@ -118,7 +121,7 @@ const snapshot = {
     status: "disconnected",
     nodeId: null,
     since: null,
-    systemProxy: false,
+    captureMode: "none",
     error: null,
   },
   job: {
@@ -232,6 +235,8 @@ try {
   );
   await expect(page.getByText(/当前已是最新版本/)).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "未连接" })).toBeVisible();
+  await page.getByRole("button", { name: "选择流量接管方式" }).click();
+  await page.getByRole("menuitem", { name: /TUN 模式/ }).click();
   await page.screenshot({
     path: resolve(artifactRoot, "simple-default-1280x860.png"),
   });
@@ -300,6 +305,7 @@ try {
         "updateSubscription",
         "test",
         "updateAllSubscriptions",
+        "setCaptureMode",
       ]),
     );
   await page.getByRole("button", { name: "完整模式" }).click();

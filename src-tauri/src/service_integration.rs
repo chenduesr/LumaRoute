@@ -87,7 +87,7 @@ fn real_cores_isolated_protocols_connections_subscriptions_and_cleanup() {
     .unwrap();
     let http = HttpFixture::new();
     let s = Settings {
-        system_proxy: false,
+        capture_mode: "none".into(),
         proxy_mode: "global".into(),
         http_port: cores::unused_port().unwrap(),
         socks_port: dual_port(),
@@ -163,6 +163,22 @@ fn real_cores_isolated_protocols_connections_subscriptions_and_cleanup() {
     )
     .unwrap();
     cores::validate_file(&root, "xray", &path).unwrap();
+
+    // Validate the native Xray TUN ingress without creating a real adapter or route.
+    let mut tun = s.clone();
+    tun.capture_mode = "tun".into();
+    tun.tun_ipv6 = true;
+    let tun_config = config::build(&base, &tun).unwrap();
+    storage::atomic_write(&path, &serde_json::to_vec(&tun_config).unwrap()).unwrap();
+    if let Err(error) = cores::validate_file(&root, "xray", &path) {
+        // Xray's test command opens Wintun while validating. In a non-elevated test
+        // process, reaching the driver permission error proves the JSON was parsed
+        // and the native TUN inbound was recognized without changing system routes.
+        assert!(
+            error.contains("Access is denied") || error.contains("拒绝访问"),
+            "Xray rejected native TUN config before driver setup: {error}"
+        );
+    }
 
     // HTTPS must use the configured proxy too. A dead proxy must never contact the target directly.
     let https_target = HttpFixture::new();
@@ -441,9 +457,10 @@ fn real_cores_isolated_protocols_connections_subscriptions_and_cleanup() {
         })
         .unwrap();
     service.update_subscription("working-sub").unwrap();
-    let summary = service
-        .update_subscriptions(vec!["fixture-sub".into(), "working-sub".into()])
-        .unwrap();
+    let summary = retry_transient(|| {
+        service.update_subscriptions(vec!["fixture-sub".into(), "working-sub".into()])
+    })
+    .unwrap();
     assert!(summary.contains("1 个成功，1 个失败"));
     let snapshot = service.snapshot();
     assert!(snapshot

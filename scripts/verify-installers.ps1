@@ -15,9 +15,9 @@ $view.Execute()
 $files = @()
 while ($record = $view.Fetch()) { $files += [pscustomobject]@{name=$record.StringData(1);size=$record.IntegerData(2)} }
 $view.Close()
-foreach ($required in @('lumaroute.exe','xray.exe','sing-box.exe','libcronet.dll','geoip.dat','geosite.dat')) {
+foreach ($required in @('lumaroute.exe','xray.exe','sing-box.exe','libcronet.dll','wintun.dll','LICENSE-wintun.txt','geoip.dat','geosite.dat')) {
     if (!($files | Where-Object { ($_.name -split '\|')[-1] -eq $required })) { throw "MSI missing $required" }
 }
 $report = [pscustomobject]@{version=$version;mode='MSI database read-only; no installation';files=$files}
 $report | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $projectRoot 'test-artifacts/msi-contents.json')
-Write-Host "MSI $version verified: main executable, both cores, DLL, and geo data are present."
+Write-Host "MSI $version verified: main executable, both cores, Wintun, licenses, and geo data are present."

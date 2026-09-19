@@ -1837,6 +1837,35 @@ select:focus-visible {
 .config-row > .switch {
   flex-shrink: 0;
 }
+.capture-segments {
+  width: 312px;
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+}
+.capture-segments button {
+  min-height: 34px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.capture-segments button.active {
+  color: var(--blue);
+  background: var(--panel);
+  box-shadow: 0 1px 4px #10274918;
+}
+.tun-options {
+  margin: 0 -8px;
+  padding: 0 16px;
+  border: 1px solid color-mix(in srgb, var(--blue) 24%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--blue-soft) 45%, transparent);
+}
 .config-area {
   display: block;
   margin: 20px 0;
@@ -2086,6 +2115,35 @@ select:focus-visible {
 }
 .simple-meta > span {
   gap: 7px;
+}
+.simple-capture-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 7px;
+  margin-left: -7px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.simple-capture-trigger:hover:not(:disabled) {
+  color: var(--blue);
+  background: var(--blue-soft);
+}
+.simple-capture-trigger:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.capture-menu-copy {
+  min-width: 185px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.capture-menu-copy small {
+  color: var(--muted);
+  font-size: 10px;
 }
 .simple-latency {
   color: #30916b;

@@ -107,14 +107,14 @@ impl Service {
         };
         for kind in ["xray", "singbox"] {
             let target = root.join("cores").join(kind);
-            if !cores::exe(&root, kind).exists() {
-                fs::create_dir_all(&target).map_err(|e| e.to_string())?;
-                let source = resources.join(kind);
-                if source.exists() {
-                    for f in fs::read_dir(source).map_err(|e| e.to_string())?.flatten() {
-                        if f.file_type().map(|t| t.is_file()).unwrap_or(false) {
-                            fs::copy(f.path(), target.join(f.file_name()))
-                                .map_err(|e| e.to_string())?;
+            fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+            let source = resources.join(kind);
+            if source.exists() {
+                for f in fs::read_dir(source).map_err(|e| e.to_string())?.flatten() {
+                    if f.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                        let destination = target.join(f.file_name());
+                        if !destination.exists() {
+                            fs::copy(f.path(), destination).map_err(|e| e.to_string())?;
                         }
                     }
                 }
@@ -250,8 +250,18 @@ impl Service {
         }
         let bytes =
             fs::read(self.root.join("profile.backup.json")).map_err(|_| "没有可恢复的备份")?;
-        let d = storage::decode(&bytes).map_err(|_| "备份文件损坏")?;
-        if d.version != 1 {
+        let mut d = storage::decode(&bytes).map_err(|_| "备份文件损坏")?;
+        if d.version == 1 {
+            d.settings.capture_mode = if d.settings.legacy_system_proxy.unwrap_or(true) {
+                "systemProxy"
+            } else {
+                "none"
+            }
+            .into();
+            d.settings.legacy_system_proxy = None;
+            d.version = 2;
+        }
+        if d.version != 2 {
             return Err("备份版本不支持".into());
         }
         config::validate(&d.settings)?;
@@ -290,6 +300,19 @@ impl Service {
             let _ = windows::autostart(old.start_on_boot);
         }
         result
+    }
+    pub fn set_capture_mode(&self, mode: &str) -> Result<(), String> {
+        if !["none", "systemProxy", "tun"].contains(&mode) {
+            return Err("流量接管方式无效".into());
+        }
+        let _op = self.operation.lock().unwrap();
+        if self.runtime.lock().unwrap().processes.is_some() || self.job.lock().unwrap().running {
+            return Err("请先断开连接并等待当前任务结束".into());
+        }
+        self.change(|data| {
+            data.settings.capture_mode = mode.into();
+            Ok(())
+        })
     }
     pub fn import(&self, payload: &str) -> Result<Value, String> {
         let (nodes, rejected) = parser::parse(payload)?;
@@ -746,12 +769,16 @@ impl Service {
                 .cloned()
                 .ok_or("请先选择节点")?
         };
-        if self.isolated && data.settings.system_proxy {
-            return Err("隔离测试模式禁止修改系统代理".into());
+        if self.isolated && data.settings.capture_mode != "none" {
+            return Err("隔离测试模式禁止修改系统代理或创建 TUN 接口".into());
+        }
+        if data.settings.capture_mode == "tun" && !windows::is_elevated() {
+            return Err("TUN 模式需要管理员权限，请重新点击连接并同意 Windows 提权提示".into());
         }
         self.runtime.lock().unwrap().connection = Connection {
             status: "starting".into(),
             node_id: selected.clone(),
+            capture_mode: data.settings.capture_mode.clone(),
             recovery_reason: recovery_reason.clone(),
             ..Connection::default()
         };
@@ -799,7 +826,7 @@ impl Service {
             if let Some(id) = selected.as_ref() {
                 self.select(id)?;
             }
-            if data.settings.system_proxy {
+            if data.settings.capture_mode == "systemProxy" {
                 if let Err(error) = windows::enable(
                     &self.root,
                     data.settings.http_port,
@@ -813,7 +840,7 @@ impl Service {
             {
                 let mut runtime = self.runtime.lock().unwrap();
                 runtime.processes = Some(set);
-                runtime.connection.system_proxy = data.settings.system_proxy;
+                runtime.connection.capture_mode = data.settings.capture_mode.clone();
                 runtime.connection.status = "verifying".into();
             }
             self.emit_snapshot();
@@ -831,6 +858,7 @@ impl Service {
             self.runtime.lock().unwrap().connection = Connection {
                 status: status.into(),
                 node_id: selected,
+                capture_mode: data.settings.capture_mode.clone(),
                 error: Some(redact(&e)),
                 recovery_reason,
                 ..Connection::default()
@@ -838,7 +866,7 @@ impl Service {
             self.emit_snapshot();
             return Err(e);
         }
-        match self.verify_active_connection(recovery_reason.as_deref()) {
+        match self.verify_active_connection(recovery_reason.as_deref(), true) {
             Ok(()) => {
                 self.log("INFO", "connection", "本地代理与远端网络验证通过");
                 Ok(if recovery_reason.is_some() {
@@ -883,32 +911,55 @@ impl Service {
         Ok(())
     }
 
-    fn verify_active_connection(&self, reason: Option<&str>) -> Result<(), String> {
+    fn verify_active_connection(
+        &self,
+        reason: Option<&str>,
+        show_progress: bool,
+    ) -> Result<(), String> {
         let settings = self.data.lock().unwrap().settings.clone();
         {
             let mut runtime = self.runtime.lock().unwrap();
             if runtime.processes.is_none() {
                 return Err("核心进程未运行".into());
             }
-            runtime.connection.status = "verifying".into();
-            runtime.connection.recovery_reason = reason.map(str::to_string);
+            if show_progress {
+                runtime.connection.status = "verifying".into();
+                runtime.connection.recovery_reason = reason.map(str::to_string);
+            }
         }
-        self.emit_snapshot();
+        if show_progress {
+            self.emit_snapshot();
+        }
         let timeout = Duration::from_secs(settings.test_timeout.clamp(3, 10));
-        let proxy_state = if settings.system_proxy && !self.isolated {
-            windows::proxy_matches(settings.http_port, settings.socks_port)
-                .map_err(|error| format!("无法读取 Windows 系统代理：{error}"))
-                .and_then(|matches| {
-                    matches
-                        .then_some(())
-                        .ok_or_else(|| "Windows 系统代理已被修改或未正确启用".to_string())
-                })
-        } else {
-            Ok(())
+        let capture_state = match settings.capture_mode.as_str() {
+            "systemProxy" if !self.isolated => {
+                windows::proxy_matches(settings.http_port, settings.socks_port)
+                    .map_err(|error| format!("无法读取 Windows 系统代理：{error}"))
+                    .and_then(|matches| {
+                        matches
+                            .then_some(())
+                            .ok_or_else(|| "Windows 系统代理已被修改或未正确启用".to_string())
+                    })
+            }
+            "tun" if !self.isolated => {
+                let mut ready = false;
+                for _ in 0..12 {
+                    self.cancelled()?;
+                    if windows::tun_ready(settings.tun_ipv6)? {
+                        ready = true;
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(250));
+                }
+                ready
+                    .then_some(())
+                    .ok_or_else(|| "TUN 网络接口或默认路由尚未就绪".to_string())
+            }
+            _ => Ok(()),
         };
-        let proxy_failed = proxy_state.is_err();
-        let result = proxy_state.and_then(|_| self.proxy_http_check(&settings, timeout));
-        if proxy_failed {
+        let capture_failed = capture_state.is_err();
+        let result = capture_state.and_then(|_| self.proxy_http_check(&settings, timeout));
+        if capture_failed {
             let _ = self.stop_inner();
         }
         let mut runtime = self.runtime.lock().unwrap();
@@ -918,15 +969,15 @@ impl Service {
             runtime.connection.last_verified = Some(now());
             runtime.connection.recovery_reason = reason.map(str::to_string);
         } else {
-            runtime.connection.status = if proxy_failed {
+            runtime.connection.status = if capture_failed {
                 "proxyFailed"
             } else {
                 "networkUnavailable"
             }
             .into();
-            runtime.connection.error = Some(if proxy_failed {
+            runtime.connection.error = Some(if capture_failed {
                 format!(
-                    "系统代理状态异常：{}；已停止核心并尝试恢复系统设置",
+                    "流量接管状态异常：{}；已停止核心并尝试恢复系统设置",
                     result
                         .as_ref()
                         .err()
@@ -1680,44 +1731,57 @@ impl Service {
             suggestion: dual_stack.2,
         });
 
-        let proxy_state = if !data.settings.system_proxy {
+        let capture_state = if data.settings.capture_mode == "none" {
             None
-        } else if connected {
-            Some(windows::proxy_matches(
-                data.settings.http_port,
-                data.settings.socks_port,
-            ))
-        } else {
+        } else if !connected {
             Some(Ok(false))
+        } else {
+            match data.settings.capture_mode.as_str() {
+                "systemProxy" => Some(windows::proxy_matches(
+                    data.settings.http_port,
+                    data.settings.socks_port,
+                )),
+                "tun" => Some(windows::tun_ready(data.settings.tun_ipv6)),
+                "none" => None,
+                _ => Some(Err("未知流量接管方式".into())),
+            }
         };
-        add(match proxy_state {
+        add(match capture_state {
             None => DiagnosticCheck {
-                key: "systemProxy".into(),
-                label: "Windows 系统代理".into(),
+                key: "captureMode".into(),
+                label: "流量接管".into(),
                 status: "skipped".into(),
-                detail: "设置中未启用系统代理接管".into(),
+                detail: "仅开放本地 HTTP / SOCKS 端口".into(),
                 suggestion: None,
             },
             Some(Ok(true)) => DiagnosticCheck {
-                key: "systemProxy".into(),
-                label: "Windows 系统代理".into(),
+                key: "captureMode".into(),
+                label: "流量接管".into(),
                 status: "ok".into(),
-                detail: "系统代理与 LumaRoute 当前端口一致".into(),
+                detail: if data.settings.capture_mode == "tun" {
+                    "TUN 网络接口与默认路由已就绪".into()
+                } else {
+                    "Windows 系统代理与 LumaRoute 当前端口一致".into()
+                },
                 suggestion: None,
             },
             Some(Ok(false)) => DiagnosticCheck {
-                key: "systemProxy".into(),
-                label: "Windows 系统代理".into(),
+                key: "captureMode".into(),
+                label: "流量接管".into(),
                 status: "failed".into(),
-                detail: "系统代理未启用或已被其他程序修改".into(),
-                suggestion: Some("请断开后重新连接，并关闭可能修改系统代理的软件".into()),
+                detail: if data.settings.capture_mode == "tun" {
+                    "TUN 网络接口或默认路由未就绪".into()
+                } else {
+                    "系统代理未启用或已被其他程序修改".into()
+                },
+                suggestion: Some("请断开后重新连接；TUN 模式还需同意管理员权限提示".into()),
             },
             Some(Err(error)) => DiagnosticCheck {
-                key: "systemProxy".into(),
-                label: "Windows 系统代理".into(),
+                key: "captureMode".into(),
+                label: "流量接管".into(),
                 status: "failed".into(),
                 detail: redact(&error),
-                suggestion: Some("请检查当前用户的系统代理设置权限".into()),
+                suggestion: Some("请检查系统代理设置或 TUN 网络接口权限".into()),
             },
         });
 
@@ -1949,7 +2013,10 @@ impl Service {
                     if let Some(reason) = recovery_reason {
                         if let Ok(_operation) = s.operation.try_lock() {
                             last_health_check = Instant::now();
-                            match s.verify_active_connection(Some(reason)) {
+                            // Periodic recovery checks run silently. They only
+                            // publish when the resulting connection state is
+                            // known, so the UI does not flicker to `verifying`.
+                            match s.verify_active_connection(Some(reason), false) {
                                 Ok(()) => {
                                     if resumed || network_changed || failed_health_checks > 0 {
                                         s.log(

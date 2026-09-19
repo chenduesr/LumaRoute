@@ -47,7 +47,7 @@ pub fn singbox_config(n: &Node, port: u16) -> Result<Value, String> {
         out["congestion_control"] = json!("cubic");
     }
     Ok(
-        json!({"log":{"level":"warn","timestamp":true},"dns":{"servers":[{"type":"local","tag":"local"}]},"inbounds":[{"type":"socks","tag":"bridge","listen":"127.0.0.1","listen_port":port}],"outbounds":[out],"route":{"final":"proxy","default_domain_resolver":"local"}}),
+        json!({"log":{"level":"warn","timestamp":true},"dns":{"servers":[{"type":"local","tag":"local"}]},"inbounds":[{"type":"socks","tag":"bridge","listen":"127.0.0.1","listen_port":port}],"outbounds":[out],"route":{"final":"proxy","default_domain_resolver":"local","auto_detect_interface":true}}),
     )
 }
 pub fn command(exe: &Path) -> Command {

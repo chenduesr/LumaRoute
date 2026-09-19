@@ -1,11 +1,86 @@
 use serde::{Deserialize, Serialize};
-use std::{os::windows::io::AsRawHandle, path::Path, process::Child};
+use std::{
+    os::windows::{ffi::OsStrExt, io::AsRawHandle, process::CommandExt},
+    path::Path,
+    process::{Child, Command},
+};
 use windows_sys::Win32::{
     Foundation::{CloseHandle, HANDLE},
+    Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY},
     System::JobObjects::*,
+    System::Threading::{GetCurrentProcess, OpenProcessToken},
+    UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
 };
 use winreg::{enums::*, RegKey, RegValue};
 const INTERNET: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings";
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+fn wide(value: &std::ffi::OsStr) -> Vec<u16> {
+    value.encode_wide().chain(std::iter::once(0)).collect()
+}
+
+pub fn is_elevated() -> bool {
+    unsafe {
+        let mut token: HANDLE = std::ptr::null_mut();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+            return false;
+        }
+        let mut elevation: TOKEN_ELEVATION = std::mem::zeroed();
+        let mut returned = 0;
+        let ok = GetTokenInformation(
+            token,
+            TokenElevation,
+            &mut elevation as *mut _ as *mut _,
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut returned,
+        ) != 0;
+        CloseHandle(token);
+        ok && elevation.TokenIsElevated != 0
+    }
+}
+
+pub fn relaunch_elevated(connect_tun: bool) -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|error| error.to_string())?;
+    let verb = wide(std::ffi::OsStr::new("runas"));
+    let file = wide(exe.as_os_str());
+    let parameters = if connect_tun {
+        wide(std::ffi::OsStr::new("--lumaroute-tun-connect"))
+    } else {
+        wide(std::ffi::OsStr::new(""))
+    };
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            verb.as_ptr(),
+            file.as_ptr(),
+            parameters.as_ptr(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    } as isize;
+    if result <= 32 {
+        Err("未获得管理员权限，TUN 模式未启动".into())
+    } else {
+        Ok(())
+    }
+}
+
+pub fn tun_ready(ipv6: bool) -> Result<bool, String> {
+    let ipv6_check = if ipv6 {
+        "$v6 = Get-NetRoute -InterfaceIndex $a.ifIndex -AddressFamily IPv6 -ErrorAction SilentlyContinue | Where-Object DestinationPrefix -eq '::/0' | Select-Object -First 1; if (!$v6) { exit 4 };"
+    } else {
+        ""
+    };
+    let script = format!(
+        "$a = Get-NetAdapter -IncludeHidden -ErrorAction SilentlyContinue | Where-Object {{ $_.Name -eq 'lumaroute_tun' -or $_.InterfaceDescription -eq 'LumaRoute' }} | Select-Object -First 1; if (!$a -or $a.Status -ne 'Up') {{ exit 2 }}; $v4 = Get-NetRoute -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object DestinationPrefix -eq '0.0.0.0/0' | Select-Object -First 1; if (!$v4) {{ exit 3 }}; {ipv6_check} exit 0"
+    );
+    Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status()
+        .map(|status| status.success())
+        .map_err(|error| format!("无法检查 TUN 网络接口：{error}"))
+}
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct RegistryValue {
     pub kind: u32,

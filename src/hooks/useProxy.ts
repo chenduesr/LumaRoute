@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
@@ -12,12 +12,27 @@ export function useProxy() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const lastSnapshotSync = useRef(0);
+  const nativeSnapshotRevision = useRef(0);
+  const refreshRequestRevision = useRef(0);
   const refresh = useCallback(async () => {
     if (!isTauri()) return;
+    const requestRevision = ++refreshRequestRevision.current;
+    const eventRevision = nativeSnapshotRevision.current;
     try {
-      setSnapshot(await readSnapshot());
+      const next = await readSnapshot();
+      // A native event that arrived after this read started is newer than the
+      // query result. Never let a late response overwrite that pushed state.
+      if (
+        requestRevision !== refreshRequestRevision.current ||
+        eventRevision !== nativeSnapshotRevision.current
+      )
+        return;
+      lastSnapshotSync.current = Date.now();
+      setSnapshot(next);
     } catch (e) {
-      setError(String(e));
+      if (requestRevision === refreshRequestRevision.current)
+        setError(String(e));
     }
   }, []);
   useEffect(() => {
@@ -28,7 +43,11 @@ export function useProxy() {
       const snapshotUnlisten = await listen<Snapshot>(
         "proxy-snapshot",
         ({ payload }) => {
-          if (!stopped) setSnapshot(payload);
+          if (!stopped) {
+            nativeSnapshotRevision.current += 1;
+            lastSnapshotSync.current = Date.now();
+            setSnapshot(payload);
+          }
         },
       );
       if (stopped) snapshotUnlisten();
@@ -57,11 +76,23 @@ export function useProxy() {
     const syncWhenVisible = () => {
       if (document.visibilityState === "visible") void refresh();
     };
-    void refresh();
-    void setupEvents().catch(() => {
-      // The low-frequency refresh below remains available if event setup fails.
-    });
-    const fallback = setInterval(() => void refresh(), 30_000);
+    const bootstrap = async () => {
+      try {
+        // Subscribe before the initial read so a state transition cannot land
+        // in the gap between the first snapshot and listener registration.
+        await setupEvents();
+      } catch {
+        // The low-frequency refresh below remains available if event setup fails.
+      } finally {
+        if (!stopped) await refresh();
+      }
+    };
+    void bootstrap();
+    const fallback = setInterval(() => {
+      // Native events are the normal synchronization path. Only query when no
+      // snapshot or successful foreground read has arrived for a full interval.
+      if (Date.now() - lastSnapshotSync.current >= 30_000) void refresh();
+    }, 5_000);
     window.addEventListener("focus", syncWhenVisible);
     document.addEventListener("visibilitychange", syncWhenVisible);
     return () => {

@@ -1,7 +1,11 @@
 import { useState, type ReactNode } from "react";
 import * as Switch from "@radix-ui/react-switch";
 import { Save } from "lucide-react";
-import type { ProxySettings as Config, Snapshot } from "../lib/proxy";
+import type {
+  CaptureMode,
+  ProxySettings as Config,
+  Snapshot,
+} from "../lib/proxy";
 import type { Settings as Appearance } from "../lib/types";
 import type { Run } from "../components/ProxyDialogs";
 
@@ -125,17 +129,60 @@ export function ProxySettings({
               ["global", "全局代理"],
               ["direct", "全部直连"],
             ])}
+            {row(
+              "接管方式",
+              "仅本地适合手动配置应用；系统代理接管常规 Windows 应用；TUN 可接管更多 TCP / UDP 流量并需要管理员权限。",
+              <div
+                className="capture-segments"
+                role="radiogroup"
+                aria-label="接管方式"
+              >
+                {(
+                  [
+                    ["none", "仅本地"],
+                    ["systemProxy", "系统代理"],
+                    ["tun", "TUN 模式"],
+                  ] as [CaptureMode, string][]
+                ).map(([mode, label]) => (
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={draft.captureMode === mode}
+                    className={draft.captureMode === mode ? "active" : ""}
+                    key={mode}
+                    onClick={() => set("captureMode", mode)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>,
+            )}
+            {draft.captureMode === "tun" && (
+              <div className="tun-options">
+                {toggle(
+                  "tunIpv6",
+                  "接管 IPv6",
+                  "同时创建 IPv6 默认路由；当前网络不支持 IPv6 时可关闭。",
+                )}
+                {toggle(
+                  "tunBypassLan",
+                  "局域网直连",
+                  "私有域名和 RFC1918 / 本地 IPv6 地址不经过代理。",
+                )}
+                {input(
+                  "tunMtu",
+                  "TUN MTU",
+                  "默认 1500；部分移动热点或特殊网络可尝试 1400。",
+                  true,
+                )}
+              </div>
+            )}
             {input("httpPort", "HTTP 端口", "仅监听本机 127.0.0.1", true)}
             {input(
               "socksPort",
               "SOCKS 端口",
               "支持 SOCKS5 / UDP；与 HTTP 端口不同",
               true,
-            )}
-            {toggle(
-              "systemProxy",
-              "接管系统代理",
-              "连接时应用到 Windows，断开和退出时恢复原设置。",
             )}
             {toggle(
               "startOnBoot",

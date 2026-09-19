@@ -29,7 +29,7 @@ fn connection_status_label(status: &str) -> &'static str {
         "connected" => "已连接并验证",
         "networkUnavailable" => "网络不可用",
         "coreCrashed" => "核心异常",
-        "proxyFailed" => "系统代理失败",
+        "proxyFailed" => "流量接管失败",
         _ => "未连接",
     }
 }
@@ -44,11 +44,22 @@ fn proxy_snapshot(state: tauri::State<'_, Arc<Service>>) -> models::Snapshot {
 }
 #[tauri::command]
 async fn proxy_action(
+    app: tauri::AppHandle,
     state: tauri::State<'_, Arc<Service>>,
     action: String,
     args: Value,
 ) -> Result<Value, String> {
     let state = state.inner().clone();
+    if action == "connect"
+        && !state.isolated
+        && state.data.lock().unwrap().settings.capture_mode == "tun"
+        && !windows::is_elevated()
+    {
+        windows::relaunch_elevated(true)?;
+        state.log("INFO", "system", "正在以管理员权限重启并连接 TUN");
+        app.exit(0);
+        return Ok(json!({"relaunching": true}));
+    }
     tauri::async_runtime::spawn_blocking(move || {
         let text = |key: &str| args[key].as_str().unwrap_or_default().to_string();
         match action.as_str() {
@@ -73,6 +84,10 @@ async fn proxy_action(
                 let s = serde_json::from_value(args["settings"].clone())
                     .map_err(|_| "设置数据格式无效")?;
                 state.save_settings(s)?;
+                Ok(Value::Null)
+            }
+            "setCaptureMode" => {
+                state.set_capture_mode(&text("mode"))?;
                 Ok(Value::Null)
             }
             "saveSubscription" => {
@@ -197,8 +212,10 @@ async fn proxy_action(
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let elevated_tun_connect =
+        std::env::args_os().any(|argument| argument == "--lumaroute-tun-connect");
     let mut builder = tauri::Builder::default().plugin(tauri_plugin_clipboard_manager::init());
-    if std::env::var_os("LUMAROUTE_TEST_ROOT").is_none() {
+    if std::env::var_os("LUMAROUTE_TEST_ROOT").is_none() && !elevated_tun_connect {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.show();
@@ -208,7 +225,7 @@ pub fn run() {
         }));
     }
     let app = builder
-        .setup(|app| {
+        .setup(move |app| {
             let isolated = std::env::var_os("LUMAROUTE_TEST_ROOT").is_some();
             let root = std::env::var_os("LUMAROUTE_TEST_ROOT")
                 .map(std::path::PathBuf::from)
@@ -239,6 +256,17 @@ pub fn run() {
             let current =
                 MenuItem::with_id(app, "current", "当前节点：未选择", false, None::<&str>)?;
             let connect = MenuItem::with_id(app, "connect-toggle", "连接", true, None::<&str>)?;
+            let capture_none =
+                MenuItem::with_id(app, "capture-none", "接管：仅本地代理", true, None::<&str>)?;
+            let capture_system = MenuItem::with_id(
+                app,
+                "capture-system",
+                "接管：Windows 系统代理",
+                true,
+                None::<&str>,
+            )?;
+            let capture_tun =
+                MenuItem::with_id(app, "capture-tun", "接管：TUN 模式", true, None::<&str>)?;
             let recent0 = MenuItem::with_id(app, "recent-0", "最近节点 1", false, None::<&str>)?;
             let recent1 = MenuItem::with_id(app, "recent-1", "最近节点 2", false, None::<&str>)?;
             let recent2 = MenuItem::with_id(app, "recent-2", "最近节点 3", false, None::<&str>)?;
@@ -256,8 +284,20 @@ pub fn run() {
             let menu = Menu::with_items(
                 app,
                 &[
-                    &show, &status, &current, &connect, &recent0, &recent1, &recent2, &update,
-                    &test, &simple, &quit,
+                    &show,
+                    &status,
+                    &current,
+                    &connect,
+                    &capture_none,
+                    &capture_system,
+                    &capture_tun,
+                    &recent0,
+                    &recent1,
+                    &recent2,
+                    &update,
+                    &test,
+                    &simple,
+                    &quit,
                 ],
             )?;
             TrayIconBuilder::with_id("main-tray")
@@ -275,6 +315,19 @@ pub fn run() {
                     }
                     "connect-toggle" => {
                         let s = app.state::<Arc<Service>>().inner().clone();
+                        if !connection_active(&s.snapshot().connection.status)
+                            && s.data.lock().unwrap().settings.capture_mode == "tun"
+                            && !windows::is_elevated()
+                        {
+                            match windows::relaunch_elevated(true) {
+                                Ok(()) => {
+                                    s.log("INFO", "system", "正在以管理员权限重启并连接 TUN");
+                                    app.exit(0);
+                                }
+                                Err(error) => s.log("ERROR", "system", &error),
+                            }
+                            return;
+                        }
                         std::thread::spawn(move || {
                             let result = if connection_active(&s.snapshot().connection.status) {
                                 s.disconnect()
@@ -285,6 +338,17 @@ pub fn run() {
                                 s.log("ERROR", "connection", &e);
                             }
                         });
+                    }
+                    "capture-none" | "capture-system" | "capture-tun" => {
+                        let mode = match event.id.as_ref() {
+                            "capture-system" => "systemProxy",
+                            "capture-tun" => "tun",
+                            _ => "none",
+                        };
+                        let s = app.state::<Arc<Service>>().inner().clone();
+                        if let Err(error) = s.set_capture_mode(mode) {
+                            s.log("ERROR", "system", &error);
+                        }
                     }
                     "update-subscriptions" => {
                         let s = app.state::<Arc<Service>>().inner().clone();
@@ -373,6 +437,26 @@ pub fn run() {
                         active.map(|node| node.name.as_str()).unwrap_or("未选择")
                     ));
                     let connected = connection_active(&snapshot.connection.status);
+                    let capture_enabled = !connected && !snapshot.job.running;
+                    let capture_mode = snapshot.data.settings.capture_mode.as_str();
+                    let _ = capture_none.set_text(if capture_mode == "none" {
+                        "✓ 接管：仅本地代理"
+                    } else {
+                        "接管：仅本地代理"
+                    });
+                    let _ = capture_system.set_text(if capture_mode == "systemProxy" {
+                        "✓ 接管：Windows 系统代理"
+                    } else {
+                        "接管：Windows 系统代理"
+                    });
+                    let _ = capture_tun.set_text(if capture_mode == "tun" {
+                        "✓ 接管：TUN 模式"
+                    } else {
+                        "接管：TUN 模式"
+                    });
+                    let _ = capture_none.set_enabled(capture_enabled);
+                    let _ = capture_system.set_enabled(capture_enabled);
+                    let _ = capture_tun.set_enabled(capture_enabled);
                     let _ = connect.set_text(if connected { "断开连接" } else { "连接" });
                     let _ = connect.set_enabled(
                         active.is_some() || snapshot.data.settings.proxy_mode == "direct",
@@ -399,6 +483,21 @@ pub fn run() {
             let settings = state.data.lock().unwrap().settings.clone();
             state.background();
             app.manage(state.clone());
+            if !isolated
+                && !elevated_tun_connect
+                && settings.auto_connect
+                && settings.capture_mode == "tun"
+                && !windows::is_elevated()
+            {
+                match windows::relaunch_elevated(true) {
+                    Ok(()) => {
+                        state.log("INFO", "system", "正在以管理员权限重启并自动连接 TUN");
+                        app.handle().exit(0);
+                    }
+                    Err(error) => state.log("ERROR", "system", &error),
+                }
+                return Ok(());
+            }
             if !isolated {
                 let startup_subscription_ids: Vec<String> = state
                     .data
@@ -410,10 +509,11 @@ pub fn run() {
                     .collect();
                 if (settings.update_subscriptions_on_launch && !startup_subscription_ids.is_empty())
                     || settings.auto_connect
+                    || elevated_tun_connect
                     || (settings.auto_check_updates && !settings.update_repo.is_empty())
                 {
                     let startup_total = startup_subscription_ids.len()
-                        + usize::from(settings.auto_connect)
+                        + usize::from(settings.auto_connect || elevated_tun_connect)
                         + usize::from(
                             settings.auto_check_updates && !settings.update_repo.is_empty(),
                         );
@@ -430,8 +530,11 @@ pub fn run() {
                                 }
                             }
                         }
-                        if settings.auto_connect {
+                        if settings.auto_connect || elevated_tun_connect {
                             s.cancelled()?;
+                            if elevated_tun_connect {
+                                std::thread::sleep(std::time::Duration::from_millis(750));
+                            }
                             match s.connect(None) {
                                 Ok(m) => messages.push(m),
                                 Err(e) => {

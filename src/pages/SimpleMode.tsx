@@ -8,6 +8,7 @@ import {
   Plus,
   Power,
   RefreshCw,
+  ShieldCheck,
   Settings2,
   Sun,
   X,
@@ -15,6 +16,7 @@ import {
 import {
   connectionActive,
   connectionStatusText,
+  captureModeText,
   coreName,
   type Snapshot,
 } from "../lib/proxy";
@@ -57,6 +59,9 @@ export function SimpleMode({
     (item) => item.id === node?.subscriptionId,
   );
   const unavailable = busy || Boolean(job?.running);
+  const selectedCaptureMode = active
+    ? (connection?.captureMode ?? data?.settings.captureMode)
+    : data?.settings.captureMode;
   const sortedNodes = [...(data?.nodes ?? [])].sort((a, b) => {
     const aDelay = a.lastError
       ? Number.POSITIVE_INFINITY
@@ -212,10 +217,47 @@ export function SimpleMode({
           )}
 
           <div className="simple-meta">
-            <span>
-              <span className={`status-dot ${connected ? "" : "offline"}`} />
-              {connection?.systemProxy ? "系统代理已接管" : "系统代理未接管"}
-            </span>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button
+                  className="simple-capture-trigger"
+                  disabled={!data || unavailable || active}
+                  aria-label="选择流量接管方式"
+                >
+                  <ShieldCheck size={14} />
+                  {captureModeText(selectedCaptureMode, active)}
+                  <ChevronDown size={13} />
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  className="dropdown"
+                  sideOffset={8}
+                  align="start"
+                >
+                  {(
+                    [
+                      ["none", "仅本地代理", "只开放 HTTP / SOCKS 端口"],
+                      ["systemProxy", "系统代理", "接管常规 Windows 应用"],
+                      ["tun", "TUN 模式", "接管更多 TCP / UDP 流量"],
+                    ] as const
+                  ).map(([mode, label, description]) => (
+                    <DropdownMenu.Item
+                      key={mode}
+                      onSelect={() =>
+                        void run("setCaptureMode", { mode }, `已切换为${label}`)
+                      }
+                    >
+                      <span className="capture-menu-copy">
+                        <strong>{label}</strong>
+                        <small>{description}</small>
+                      </span>
+                      {selectedCaptureMode === mode && <span>✓</span>}
+                    </DropdownMenu.Item>
+                  ))}
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
             <span>{node ? coreName(node) : "Xray + sing-box"}</span>
             {node && (
               <span

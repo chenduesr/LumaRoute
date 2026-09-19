@@ -18,6 +18,12 @@ pub fn validate(s: &Settings) -> Result<(), String> {
     {
         return Err("代理或路由模式无效".into());
     }
+    if !["none", "systemProxy", "tun"].contains(&s.capture_mode.as_str()) {
+        return Err("流量接管方式无效".into());
+    }
+    if !(576..=9000).contains(&s.tun_mtu) {
+        return Err("TUN MTU 应在 576 到 9000 之间".into());
+    }
     if !(1..=60).contains(&s.test_timeout)
         || !(1..=32).contains(&s.test_concurrency)
         || s.test_retries > 3
@@ -266,8 +272,63 @@ pub fn build(node: &Node, s: &Settings) -> Result<Value, String> {
         }
         rules.push(json!({"type":"field","network":"tcp,udp","outboundTag":if s.routing_mode=="whitelist"{"direct"}else{"proxy"}}));
     }
+    if s.capture_mode == "tun"
+        && s.tun_bypass_lan
+        && s.proxy_mode != "direct"
+        && (s.proxy_mode != "rule" || !s.bypass_mainland)
+    {
+        let fallback = (s.proxy_mode == "rule").then(|| rules.pop()).flatten();
+        add_rules(
+            &mut rules,
+            "direct",
+            vec!["geosite:private".into()],
+            vec!["geoip:private".into()],
+        );
+        if let Some(fallback) = fallback {
+            rules.push(fallback);
+        }
+    }
     let sniff = json!({"enabled":true,"destOverride":if s.fake_dns{vec!["http","tls","fakedns"]}else{vec!["http","tls"]},"routeOnly":!s.fake_dns});
-    let mut c = json!({"log":{"loglevel":"warning"},"inbounds":[{"tag":"http","listen":"127.0.0.1","port":s.http_port,"protocol":"http","sniffing":sniff},{"tag":"socks","listen":"127.0.0.1","port":s.socks_port,"protocol":"socks","settings":{"auth":"noauth","udp":true},"sniffing":sniff}],"outbounds":[out,{"tag":"direct","protocol":"freedom"},{"tag":"block","protocol":"blackhole"}],"routing":{"domainStrategy":if s.proxy_mode=="rule"{"IPIfNonMatch"}else{"AsIs"},"rules":rules}});
+    let mut inbounds = vec![
+        json!({"tag":"http","listen":"127.0.0.1","port":s.http_port,"protocol":"http","sniffing":sniff}),
+        json!({"tag":"socks","listen":"127.0.0.1","port":s.socks_port,"protocol":"socks","settings":{"auth":"noauth","udp":true},"sniffing":sniff}),
+    ];
+    let mut outbounds = vec![
+        out,
+        json!({"tag":"direct","protocol":"freedom"}),
+        json!({"tag":"block","protocol":"blackhole"}),
+    ];
+    if s.capture_mode == "tun" {
+        let mut gateway = vec!["172.19.0.1/30"];
+        let mut system_routes = vec!["0.0.0.0/0"];
+        let mut tun_dns = vec!["1.1.1.1"];
+        if s.tun_ipv6 {
+            gateway.push("fdfe:dcba:9876::1/126");
+            system_routes.push("::/0");
+            tun_dns.push("2606:4700:4700::1111");
+        }
+        inbounds.push(json!({
+            "tag":"tun",
+            "protocol":"tun",
+            "settings":{
+                "name":"lumaroute_tun",
+                "desc":"LumaRoute",
+                "mtu":s.tun_mtu,
+                "gateway":gateway,
+                "dns":tun_dns,
+                "autoSystemRoutingTable":system_routes,
+                "autoOutboundsInterface":"auto"
+            },
+            "sniffing":{
+                "enabled":true,
+                "destOverride":if s.fake_dns{vec!["http","tls","quic","fakedns"]}else{vec!["http","tls","quic"]},
+                "routeOnly":true
+            }
+        }));
+        rules.insert(0, json!({"type":"field","inboundTag":["tun"],"network":"tcp,udp","port":53,"outboundTag":"dns-out"}));
+        outbounds.push(json!({"tag":"dns-out","protocol":"dns"}));
+    }
+    let mut c = json!({"log":{"loglevel":"warning"},"inbounds":inbounds,"outbounds":outbounds,"routing":{"domainStrategy":if s.proxy_mode=="rule"{"IPIfNonMatch"}else{"AsIs"},"rules":rules}});
     if s.custom_dns {
         let mut servers = vec![];
         if s.fake_dns {
@@ -295,6 +356,11 @@ pub fn build(node: &Node, s: &Settings) -> Result<Value, String> {
             servers.push(json!("1.1.1.1"));
         }
         c["dns"] = json!({"queryStrategy":"UseIPv4","servers":servers});
+    } else if s.capture_mode == "tun" {
+        c["dns"] = json!({
+            "queryStrategy":if s.tun_ipv6{"UseIP"}else{"UseIPv4"},
+            "servers":["1.1.1.1","8.8.8.8"]
+        });
     }
     Ok(c)
 }
@@ -340,5 +406,36 @@ mod tests {
             build(&Node::default(), &s).unwrap()["outbounds"][0]["protocol"],
             "freedom"
         );
+    }
+    #[test]
+    fn tun_mode_adds_native_xray_ingress_routes_and_dns() {
+        let s = Settings {
+            capture_mode: "tun".into(),
+            tun_ipv6: true,
+            tun_bypass_lan: true,
+            ..Settings::default()
+        };
+        let n = crate::parser::parse_link("socks://127.0.0.1:1080").unwrap();
+        let c = build(&n, &s).unwrap();
+        let tun = c["inbounds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|inbound| inbound["tag"] == "tun")
+            .unwrap();
+        assert_eq!(tun["protocol"], "tun");
+        assert_eq!(tun["settings"]["name"], "lumaroute_tun");
+        assert_eq!(tun["settings"]["autoOutboundsInterface"], "auto");
+        assert!(tun["settings"]["autoSystemRoutingTable"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|route| route == "::/0"));
+        assert!(c["outbounds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|outbound| outbound["tag"] == "dns-out"));
+        assert_eq!(c["routing"]["rules"][0]["port"], 53);
     }
 }

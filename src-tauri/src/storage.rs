@@ -97,8 +97,18 @@ pub fn load(root: &Path) -> Result<Data, String> {
     if b.len() > 32 * 1024 * 1024 {
         return Err("配置文件过大".into());
     }
-    let data = decode(&b)?;
-    if data.version != 1 {
+    let mut data = decode(&b)?;
+    if data.version == 1 {
+        data.settings.capture_mode = if data.settings.legacy_system_proxy.unwrap_or(true) {
+            "systemProxy"
+        } else {
+            "none"
+        }
+        .into();
+        data.settings.legacy_system_proxy = None;
+        data.version = 2;
+    }
+    if data.version != 2 {
         return Err("不支持的配置版本".into());
     }
     config::validate(&data.settings)?;
@@ -143,5 +153,18 @@ mod tests {
             fs::read(dir.path().join("profile.json")).unwrap(),
             b"broken"
         );
+    }
+    #[test]
+    fn migrates_legacy_system_proxy_to_capture_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("profile.json"),
+            br#"{"version":1,"settings":{"systemProxy":false}}"#,
+        )
+        .unwrap();
+        let data = load(dir.path()).unwrap();
+        assert_eq!(data.version, 2);
+        assert_eq!(data.settings.capture_mode, "none");
+        assert!(data.settings.legacy_system_proxy.is_none());
     }
 }

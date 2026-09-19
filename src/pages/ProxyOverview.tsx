@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -11,6 +12,7 @@ import {
 } from "lucide-react";
 import {
   bytes,
+  captureModeText,
   connectionActive,
   connectionStatusText,
   coreName,
@@ -37,10 +39,17 @@ export function ProxyOverview({
   );
   const connected = connection.status === "connected";
   const active = connectionActive(connection.status);
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    setClock(Date.now());
+    if (!connection.since) return;
+    const timer = window.setInterval(() => setClock(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [connection.since]);
   const seconds = connection.since
     ? Math.max(
         0,
-        Math.floor((Date.now() - Date.parse(connection.since)) / 1000),
+        Math.floor((clock - Date.parse(connection.since)) / 1000),
       )
     : 0;
   const duration = `${Math.floor(seconds / 3600)
@@ -106,7 +115,10 @@ export function ProxyOverview({
         <div className="connection-bottom">
           <span>
             <ShieldCheck size={14} />
-            {connection.systemProxy ? "已接管系统代理" : "未接管系统代理"}
+            {captureModeText(
+              active ? connection.captureMode : data.settings.captureMode,
+              active,
+            )}
           </span>
           <span>{node ? coreName(node) : "Xray + sing-box"}</span>
           <span>
@@ -120,7 +132,7 @@ export function ProxyOverview({
           ? `最近验证：${dateText(connection.lastVerified)}${
               connection.recoveryReason ? ` · ${connection.recoveryReason}` : ""
             }`
-          : "连接时会依次检查核心、本地端口、系统代理和远端网络。"}
+          : "连接时会依次检查核心、本地端口、流量接管和远端网络。"}
       </p>
       {connection.error && (
         <div className="error-banner" role="alert">

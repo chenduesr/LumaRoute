@@ -4,7 +4,10 @@ export interface ProxySettings {
   socksPort: number;
   proxyMode: string;
   routingMode: string;
-  systemProxy: boolean;
+  captureMode: CaptureMode;
+  tunIpv6: boolean;
+  tunBypassLan: boolean;
+  tunMtu: number;
   bypassMainland: boolean;
   startOnBoot: boolean;
   autoConnect: boolean;
@@ -95,6 +98,7 @@ export type ConnectionStatus =
   | "networkUnavailable"
   | "coreCrashed"
   | "proxyFailed";
+export type CaptureMode = "none" | "systemProxy" | "tun";
 export interface DiagnosticCheck {
   key: string;
   label: string;
@@ -126,7 +130,7 @@ export interface Snapshot {
     status: ConnectionStatus;
     nodeId: string | null;
     since: string | null;
-    systemProxy: boolean;
+    captureMode: CaptureMode;
     error: string | null;
     lastVerified: string | null;
     recoveryReason: string | null;
@@ -195,8 +199,14 @@ export const connectionStatusText = (status?: ConnectionStatus) => {
     case "coreCrashed":
       return "核心异常";
     case "proxyFailed":
-      return "系统代理应用失败";
+      return "流量接管失败";
     default:
       return "未连接";
   }
+};
+export const captureModeText = (mode?: CaptureMode, active = false) => {
+  if (mode === "tun") return active ? "TUN 路由已接管" : "TUN 模式";
+  if (mode === "systemProxy")
+    return active ? "Windows 系统代理已接管" : "系统代理";
+  return active ? "仅本地端口" : "仅本地代理";
 };
